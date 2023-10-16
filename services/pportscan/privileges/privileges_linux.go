@@ -3,11 +3,10 @@
 package privileges
 
 import (
+	"gitlab.example.com/zhangweijie/portscan/services/pportscan/israce"
+	"golang.org/x/sys/unix"
 	"os"
 	"runtime"
-
-	"app/global/israce"
-	"golang.org/x/sys/unix"
 )
 
 // isPrivileged 查当前进程是否具有CAP_NET_RAW功能或为 root 用户
