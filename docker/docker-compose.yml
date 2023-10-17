@@ -1,0 +1,13 @@
+version: '3.7'
+
+services:
+  portscan-app:
+    image: portscan-app
+    container_name: portscan-app
+    build:
+      dockerfile: dockerfile
+    restart: always
+    volumes:
+      - './:/usr/src/app'
+    ports:
+      - "5002:5002"

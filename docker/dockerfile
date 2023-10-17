@@ -1,0 +1,26 @@
+# 使用 Ubuntu 22.04 作为基础镜像
+FROM --platform=linux/amd64 ubuntu:22.04
+
+# 设置终端为非交互式模式
+ENV DEBIAN_FRONTEND=noninteractive
+
+# 设置时区
+ENV TZ=Asia/Shanghai
+RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
+RUN mkdir -p /usr/src/app
+WORKDIR /usr/src/app
+
+# 替换 update 镜像源
+COPY ./sources.list /etc/apt/sources.list
+
+# 更新包管理器并安装基本工具
+RUN apt-get update && \
+    apt-get install -y sudo curl gnupg git libpcap0.8 libpcap0.8-dev libpcap-dev
+
+# 拷贝服务到工作目录
+COPY . /usr/src/app
+
+RUN chmod +x /usr/src/app/portscan-app
+
+# 运行服务
+CMD ["/usr/src/app/portscan-app"]
