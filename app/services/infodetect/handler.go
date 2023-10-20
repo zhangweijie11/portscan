@@ -207,7 +207,13 @@ func InfoDetectMainWorker(ctx context.Context, work *toolModels.Work, validParam
 			}
 		}
 
+		baseFinalResult := make(map[string]inforesult.InfoDetectResult)
+
 		var finalResult []inforesult.InfoDetectResult
+		for _, ip := range validIps {
+			infoDetectResult := inforesult.InfoDetectResult{Ip: ip, IpType: "other"}
+			baseFinalResult[ip] = infoDetectResult
+		}
 		for ip, serviceRecognizeResult := range tmpResult.ServiceRecognizeResult {
 			var portResult []*serviceresult.Response
 			for _, response := range serviceRecognizeResult {
@@ -218,8 +224,11 @@ func InfoDetectMainWorker(ctx context.Context, work *toolModels.Work, validParam
 				IpType:     tmpResult.IpType[ip],
 				PortResult: portResult,
 			}
+			baseFinalResult[ip] = infoDetectResult
+		}
 
-			finalResult = append(finalResult, infoDetectResult)
+		for _, result := range baseFinalResult {
+			finalResult = append(finalResult, result)
 		}
 
 		if work.CallbackType != "" && work.CallbackUrl != "" {
