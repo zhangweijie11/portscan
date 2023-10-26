@@ -81,17 +81,22 @@ func (w *Worker) GroupPortScanWorker() {
 		defer w.Wg.Done()
 
 		for task := range w.TaskChan {
-			// 获取开放端口和对应协议
-			portScanResult := pportscan.GetOpenPort(task.TargetIps, task.TargetPorts, task.CDN, task.WAF, task.Cloud, task.ScanType)
+			select {
+			case <-w.Ctx.Done():
+				return
+			default:
+				// 获取开放端口和对应协议
+				portScanResult := pportscan.GetOpenPort(task.TargetIps, task.TargetPorts, task.CDN, task.WAF, task.Cloud, task.ScanType)
 
-			// 进行服务识别
-			serviceRecognizeScanResult := service_recognize.GetService(portScanResult.IpPorts, task.Nmap)
+				// 进行服务识别
+				serviceRecognizeScanResult := service_recognize.GetService(portScanResult.IpPorts, task.Nmap)
 
-			// 整合数据
-			workerDetectResult := mergeResult(portScanResult.PortScanIpStatus, serviceRecognizeScanResult)
+				// 整合数据
+				workerDetectResult := mergeResult(portScanResult.PortScanIpStatus, serviceRecognizeScanResult)
 
-			// 向结果通道推送数据
-			w.ResultChan <- workerDetectResult
+				// 向结果通道推送数据
+				w.ResultChan <- workerDetectResult
+			}
 		}
 	}()
 }
@@ -192,7 +197,7 @@ func InfoDetectMainWorker(ctx context.Context, work *toolModels.Work, validParam
 					tmpResult.IpType[ip] = workerDetectResult.IpType[ip]
 				}
 				// 为了以防万一，将有数据的全部设为有效
-				if len(portResponse) > 1 {
+				if len(portResponse) > 0 {
 					tmpResult.IpType[ip] = "isValuable"
 				}
 				for port, response := range portResponse {
