@@ -86,10 +86,10 @@ func (w *Worker) GroupPortScanWorker() {
 				return
 			default:
 				// 获取开放端口和对应协议
-				portScanResult := pportscan.GetOpenPort(task.TargetIps, task.TargetPorts, task.CDN, task.WAF, task.Cloud, task.ScanType)
+				portScanResult := pportscan.GetOpenPort(w.Ctx, task.TargetIps, task.TargetPorts, task.CDN, task.WAF, task.Cloud, task.ScanType)
 
 				// 进行服务识别
-				serviceRecognizeScanResult := service_recognize.GetService(portScanResult.IpPorts, task.Nmap)
+				serviceRecognizeScanResult := service_recognize.GetService(w.Ctx, portScanResult.IpPorts, task.Nmap)
 
 				// 整合数据
 				workerDetectResult := mergeResult(portScanResult.PortScanIpStatus, serviceRecognizeScanResult)

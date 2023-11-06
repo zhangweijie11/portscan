@@ -1,6 +1,7 @@
 package pportscan
 
 import (
+	"context"
 	"github.com/projectdiscovery/blackrock"
 	"github.com/projectdiscovery/mapcidr"
 	"gitlab.example.com/zhangweijie/portscan/global"
@@ -25,7 +26,7 @@ func NewFinalResult() FinalResult {
 }
 
 // GetOpenPort 获取开放端口
-func GetOpenPort(validIps []string, validPorts []*portlist.Port, cdn, waf, cloud bool, scanType string) FinalResult {
+func GetOpenPort(ctx context.Context, validIps []string, validPorts []*portlist.Port, cdn, waf, cloud bool, scanType string) FinalResult {
 	finalResult := NewFinalResult()
 	scanner := sc.NewScanner(cdn, waf, cloud, scanType)
 	scanner.Ports = validPorts
@@ -72,11 +73,17 @@ func GetOpenPort(validIps []string, validPorts []*portlist.Port, cdn, waf, cloud
 			if scanner.ScanResults.HasSkipped(ip) {
 				continue
 			}
-			if scanner.ScanType == global.ConnectScan {
-				scanner.WgScan.Add()
-				go scanner.ScanOpenPort(ip, port)
-			} else {
-				scanner.RawSocketEnumeration(ip, port)
+			select {
+			case <-ctx.Done():
+				return finalResult
+			default:
+				if scanner.ScanType == global.ConnectScan {
+					scanner.WgScan.Add()
+					go scanner.ScanOpenPort(ip, port)
+				} else {
+					scanner.RawSocketEnumeration(ip, port)
+				}
+
 			}
 
 		}
