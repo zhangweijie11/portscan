@@ -75,3 +75,4 @@ __debug_bin
 .sass-cache/*
 node_modules/
 *.yaml
+./docker/portscan-app
