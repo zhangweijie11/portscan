@@ -20,13 +20,13 @@ type Recognizer struct {
 }
 
 // NewRecognizer 初始化识别器
-func NewRecognizer() *Recognizer {
+func NewRecognizer(ctx context.Context) *Recognizer {
 	recognizer := &Recognizer{
 		RecognizeResults: result.NewRecognizeResult(),
 		// 控制协程并发数量
 		WgScan: sizedwaitgroup.New(global.DefaultRateConnectScan),
 		// ratelimit 是一个用于限制请求速率的库。它提供了一种方便的方式来管理和控制在给定时间段内可以发送多少个请求。
-		Limiter: ratelimit.New(context.Background(), uint(global.DefaultRateConnectScan), time.Second),
+		Limiter: ratelimit.New(ctx, uint(global.DefaultRateConnectScan), time.Second),
 	}
 
 	return recognizer

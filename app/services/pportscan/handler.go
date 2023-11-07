@@ -28,7 +28,7 @@ func NewFinalResult() FinalResult {
 // GetOpenPort 获取开放端口
 func GetOpenPort(ctx context.Context, validIps []string, validPorts []*portlist.Port, cdn, waf, cloud bool, scanType string) FinalResult {
 	finalResult := NewFinalResult()
-	scanner := sc.NewScanner(cdn, waf, cloud, scanType)
+	scanner := sc.NewScanner(ctx, cdn, waf, cloud, scanType)
 	scanner.Ports = validPorts
 	err := scanner.SplitAndParseIP(validIps)
 	if err != nil {

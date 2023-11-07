@@ -8,7 +8,7 @@ import (
 )
 
 func GetService(ctx context.Context, portScanResults map[string][]int, nmap *nmap.Nmap) map[string]map[int]*result.Response {
-	recognizer := rr.NewRecognizer()
+	recognizer := rr.NewRecognizer(ctx)
 	recognizer.Nmap = nmap
 	for ip, ports := range portScanResults {
 		for _, port := range ports {

@@ -98,7 +98,7 @@ var (
 )
 
 // NewScanner 初始化扫描器
-func NewScanner(cdn, waf, cloud bool, scanType string) *Scanner {
+func NewScanner(ctx context.Context, cdn, waf, cloud bool, scanType string) *Scanner {
 	iprang, err := ipranger.New()
 	if err != nil {
 		return nil
@@ -126,13 +126,13 @@ func NewScanner(cdn, waf, cloud bool, scanType string) *Scanner {
 		// 控制协程并发数量
 		scanner.WgScan = sizedwaitgroup.New(global.DefaultRateSynScan)
 		// ratelimit 是一个用于限制请求速率的库。它提供了一种方便的方式来管理和控制在给定时间段内可以发送多少个请求。
-		scanner.Limiter = ratelimit.New(context.Background(), uint(global.DefaultRateSynScan), time.Second)
+		scanner.Limiter = ratelimit.New(ctx, uint(global.DefaultRateSynScan), time.Second)
 	} else {
 		scanner.Retries = global.DefaultRetriesConnectScan
 		// 控制协程并发数量
 		scanner.WgScan = sizedwaitgroup.New(global.DefaultRateConnectScan)
 		// ratelimit 是一个用于限制请求速率的库。它提供了一种方便的方式来管理和控制在给定时间段内可以发送多少个请求。
-		scanner.Limiter = ratelimit.New(context.Background(), uint(global.DefaultRateConnectScan), time.Second)
+		scanner.Limiter = ratelimit.New(ctx, uint(global.DefaultRateConnectScan), time.Second)
 	}
 
 	// 只要是需要排除 CDN/WAF/Cloud三者中的一个，就需要实例化检查器

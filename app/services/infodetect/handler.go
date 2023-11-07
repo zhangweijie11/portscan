@@ -104,10 +104,11 @@ func (w *Worker) GroupPortScanWorker() {
 // InfoDetectMainWorker  端口扫描主程序
 func InfoDetectMainWorker(ctx context.Context, work *toolModels.Work, validParams *schemas.PortScanParams) error {
 	quit := make(chan struct{})
-	errChan := make(chan error)
+	errChan := make(chan error, 2)
 
 	go func() {
 		defer close(quit)
+		defer close(errChan)
 
 		scanType := banner.ShowNetworkCapabilities(validParams.ScanType)
 		validParams.ScanType = scanType

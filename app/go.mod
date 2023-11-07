@@ -16,12 +16,12 @@ require (
 	github.com/projectdiscovery/ipranger v0.0.6
 	github.com/projectdiscovery/mapcidr v1.1.2
 	github.com/projectdiscovery/networkpolicy v0.0.6
-	github.com/projectdiscovery/ratelimit v0.0.10
-	github.com/projectdiscovery/utils v0.0.58
+	github.com/projectdiscovery/ratelimit v0.0.14
+	github.com/projectdiscovery/utils v0.0.62
 	github.com/remeh/sizedwaitgroup v1.0.0
 	github.com/stretchr/testify v1.8.4
 	github.com/temoto/robotstxt v1.1.2
-	gitlab.example.com/zhangweijie/tool-sdk v0.6.5
+	gitlab.example.com/zhangweijie/tool-sdk v0.6.7
 	golang.org/x/exp v0.0.0-20231006140011-7918f672742d
 	golang.org/x/sys v0.13.0
 )
@@ -41,6 +41,7 @@ require (
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/dgryski/go-rendezvous v0.0.0-20200823014737-9f7001d12a5f // indirect
 	github.com/dsnet/compress v0.0.1 // indirect
+	github.com/fsnotify/fsnotify v1.6.0 // indirect
 	github.com/gabriel-vasile/mimetype v1.4.2 // indirect
 	github.com/gin-contrib/sse v0.1.0 // indirect
 	github.com/gin-gonic/gin v1.9.1 // indirect
@@ -73,14 +74,13 @@ require (
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
 	github.com/modern-go/reflect2 v1.0.2 // indirect
 	github.com/nwaples/rardecode v1.1.3 // indirect
-	github.com/nxadm/tail v1.4.11 // indirect
 	github.com/olivere/elastic/v7 v7.0.32 // indirect
 	github.com/pelletier/go-toml/v2 v2.0.8 // indirect
 	github.com/pierrec/lz4 v2.6.1+incompatible // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/projectdiscovery/asnmap v1.0.4 // indirect
-	github.com/projectdiscovery/hmap v0.0.19 // indirect
+	github.com/projectdiscovery/hmap v0.0.23 // indirect
 	github.com/projectdiscovery/retryabledns v1.0.39 // indirect
 	github.com/redis/go-redis/v9 v9.1.0 // indirect
 	github.com/rogpeppe/go-internal v1.11.0 // indirect
