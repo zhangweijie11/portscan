@@ -204,12 +204,12 @@ func InfoDetectMainWorker(ctx context.Context, work *toolModels.Work, validParam
 				for port, response := range portResponse {
 					tmpResult.AddRecognizeResult(ip, port, response)
 				}
-				if work.ProgressType != "" && work.ProgressUrl != "" {
-					pushProgress := &toolGlobal.Progress{WorkUUID: work.UUID, ProgressType: work.ProgressType, ProgressUrl: work.ProgressUrl, Progress: 0}
-					pushProgress.Progress += onePercent
-					// 回传进度
-					toolGlobal.ValidProgressChan <- pushProgress
-				}
+			}
+			if work.ProgressType != "" && work.ProgressUrl != "" {
+				pushProgress := &toolGlobal.Progress{WorkUUID: work.UUID, ProgressType: work.ProgressType, ProgressUrl: work.ProgressUrl, Progress: 0}
+				pushProgress.Progress += onePercent
+				// 回传进度
+				toolGlobal.ValidProgressChan <- pushProgress
 			}
 		}
 
