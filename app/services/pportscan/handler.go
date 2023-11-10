@@ -39,9 +39,12 @@ func GetOpenPort(ctx context.Context, validIps []string, validPorts []*portlist.
 		err = scanner.SetupHandlers()
 		if err != nil {
 			logger.Warn("ipranger 出现问题")
+			return finalResult
 		}
 		scanner.StartWorkers()
 	}
+
+	scanner.Phase.Set(sc.Init)
 
 	ipsCallback := scanner.GetPreprocessedIps
 	// 将 IP 缩小到最少的 CIDR 量
@@ -59,10 +62,12 @@ func GetOpenPort(ctx context.Context, validIps []string, validPorts []*portlist.
 	portsCount = uint64(len(scanner.Ports))
 	Range := targetsCount * portsCount
 
-	currentSeed := time.Now().UnixNano()
-	b := blackrock.New(int64(Range), currentSeed)
+	scanner.Phase.Set(sc.Scan)
+
 	// 由于网络不可靠性，无论以前的扫描结果如何，都会执行重试
 	for currentRetry := 0; currentRetry < scanner.Retries; currentRetry++ {
+		currentSeed := time.Now().UnixNano()
+		b := blackrock.New(int64(Range), currentSeed)
 		for index := int64(0); index < int64(Range); index++ {
 			xxx := b.Shuffle(index)
 			ipIndex := xxx / int64(portsCount)
@@ -77,19 +82,19 @@ func GetOpenPort(ctx context.Context, validIps []string, validPorts []*portlist.
 			case <-ctx.Done():
 				return finalResult
 			default:
-				if scanner.ScanType == global.ConnectScan {
+				if privileges.IsOSSupported && privileges.IsPrivileged && scanner.ScanType == global.SynScan {
+					scanner.RawSocketEnumeration(ip, port)
+				} else {
 					scanner.WgScan.Add()
 					go scanner.ScanOpenPort(ip, port)
-				} else {
-					scanner.RawSocketEnumeration(ip, port)
 				}
-
 			}
-
 		}
+		scanner.WgScan.Wait()
 	}
 
 	time.Sleep(time.Second * 3)
+	scanner.Phase.Set(sc.Done)
 
 	var ipsPorts []*result.HostResult
 	for hostResult := range scanner.ScanResults.GetIpsPorts() {

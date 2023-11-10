@@ -13,7 +13,7 @@ func ShowNetworkCapabilities(ScanType string) string {
 	var accessLevel, scanType string
 
 	switch {
-	case privileges.IsPrivileged && ScanType == global.SynScan:
+	case privileges.IsOSSupported && privileges.IsPrivileged && ScanType == global.SynScan:
 		accessLevel = "root"
 		if osutil.IsLinux() {
 			accessLevel = "CAP_NET_RAW"

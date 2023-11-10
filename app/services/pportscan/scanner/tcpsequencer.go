@@ -1,4 +1,4 @@
-package tcpsequencer
+package scanner
 
 import (
 	"math"
@@ -7,7 +7,7 @@ import (
 
 // TCPSequencer generates linear TCP sequence numbers that wrap
 // around after reaching their maximum value.
-//
+// `
 // According to specs, this is the correct way to approach TCP sequence
 // number since linearity will be guaranteed by the wrapping around to initial 0.
 type TCPSequencer struct {
