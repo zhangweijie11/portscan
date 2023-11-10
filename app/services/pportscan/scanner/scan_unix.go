@@ -147,7 +147,8 @@ func SetupHandlerUnix(s *Scanner, interfaceName, bpfFilter string, protocols ...
 		case protocol.TCP, protocol.UDP:
 			handlers.TransportInactive = append(handlers.TransportInactive, inactive)
 		case protocol.ARP:
-			handlers.EthernetInactive = append(handlers.EthernetInactive, inactive)
+			continue
+			//handlers.EthernetInactive = append(handlers.EthernetInactive, inactive)
 		default:
 			logger.Warn("协议不支持")
 		}
@@ -177,7 +178,8 @@ func SetupHandlerUnix(s *Scanner, interfaceName, bpfFilter string, protocols ...
 				handlers.TransportActive = append(handlers.TransportActive, handle)
 			}
 		case protocol.ARP:
-			handlers.EthernetActive = append(handlers.EthernetActive, handle)
+			continue
+			//handlers.EthernetActive = append(handlers.EthernetActive, handle)
 		default:
 			logger.Warn("协议不支持")
 		}

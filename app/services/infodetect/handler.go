@@ -5,6 +5,7 @@ import (
 	"errors"
 	"gitlab.example.com/zhangweijie/portscan/global"
 	"gitlab.example.com/zhangweijie/portscan/middlerware/schemas"
+	"gitlab.example.com/zhangweijie/portscan/services/common"
 	"gitlab.example.com/zhangweijie/portscan/services/infodetect/banner"
 	inforesult "gitlab.example.com/zhangweijie/portscan/services/infodetect/result"
 	"gitlab.example.com/zhangweijie/portscan/services/infodetect/utils"
@@ -145,7 +146,7 @@ func InfoDetectMainWorker(ctx context.Context, work *toolModels.Work, validParam
 			wg.Add(1)
 		}
 
-		customNmap := nmap.NewNmap()
+		customNmap := common.CustomerNmap
 		// 生产者向任务通道发送任务
 		go func() {
 			// 通知消费者所有任务已经推送完毕

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"gitlab.example.com/zhangweijie/portscan/middlerware/schemas"
+	_ "gitlab.example.com/zhangweijie/portscan/services/common"
 	"gitlab.example.com/zhangweijie/portscan/services/infodetect"
 	tool "gitlab.example.com/zhangweijie/tool-sdk/cmd"
 	"gitlab.example.com/zhangweijie/tool-sdk/global"
