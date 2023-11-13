@@ -8,7 +8,6 @@ import (
 	"github.com/google/gopacket/layers"
 	"github.com/projectdiscovery/cdncheck"
 	"github.com/projectdiscovery/freeport"
-	"github.com/projectdiscovery/gologger"
 	"github.com/projectdiscovery/ipranger"
 	"github.com/projectdiscovery/mapcidr"
 	"github.com/projectdiscovery/mapcidr/asn"
@@ -69,9 +68,9 @@ type Scanner struct {
 	SourcePort           int
 	tcpPacketListener4   net.PacketConn
 	udpPacketListener4   net.PacketConn
+	icmpPacketListener4  net.PacketConn
 	tcpPacketListener6   net.PacketConn
 	udpPacketListener6   net.PacketConn
-	icmpPacketListener4  net.PacketConn
 	icmpPacketListener6  net.PacketConn
 	transportPacketSend  chan *PkgSend
 	icmpPacketSend       chan *PkgSend
@@ -100,7 +99,7 @@ type PkgSend struct {
 	SourceIP string
 }
 
-// PkgResult 发送 TCP 包的结果
+// PkgResult 数据包的结果
 type PkgResult struct {
 	ip   string
 	port *portlist.Port
@@ -205,15 +204,24 @@ func (s *Scanner) StartWorkers() {
 	//go s.ICMPReadWorker()
 	//go s.ICMPWriteWorker()
 	//go s.ICMPResultWorker()
+	//go s.EthernetWriteWorker()
+
+	// 构建和发送数据包
+	go s.TransportWriteWorker()
+
+	// 读取数据包的内容
 	go s.TCPReadWorker4()
 	go s.TCPReadWorker6()
 	go s.UDPReadWorker4()
 	go s.UDPReadWorker6()
+
+	// 接收和解析数据包
 	go s.TCPReadWorkerPCAP()
-	go s.TransportWriteWorker()
+
+	// 处理结果
 	go s.TCPResultWorker()
 	go s.UDPResultWorker()
-	//go s.EthernetWriteWorker()
+
 }
 
 // ICMPReadWorker 启动 IP4 和 IP6 工作程序
@@ -317,20 +325,21 @@ func (s *Scanner) ICMPResultWorker() {
 	}
 }
 
-// TCPReadWorker4 读取和解析传入的 TCP 数据包
+// TCPReadWorker4 读取传入的 TCP 数据包
 func (s *Scanner) TCPReadWorker4() {
 	defer s.tcpPacketListener4.Close()
+	// 创建一个大小为 4096 字节的缓冲区，用于存储从网络接口读取的数据包。
 	data := make([]byte, 4096)
 	for {
 		if s.Phase.Is(Done) {
 			break
 		}
-		// nolint:errcheck // just empty the buffer
+		// 将数据包内容存储在缓存区
 		s.tcpPacketListener4.ReadFrom(data)
 	}
 }
 
-// TCPReadWorker6 读取和解析传入的 TCP 数据包
+// TCPReadWorker6 读取传入的 TCP 数据包
 func (s *Scanner) TCPReadWorker6() {
 	defer s.tcpPacketListener6.Close()
 	data := make([]byte, 4096)
@@ -338,12 +347,12 @@ func (s *Scanner) TCPReadWorker6() {
 		if s.Phase.Is(Done) {
 			break
 		}
-		// nolint:errcheck // just empty the buffer
+		// 将数据包内容存储在缓存区
 		s.tcpPacketListener6.ReadFrom(data)
 	}
 }
 
-// UDPReadWorker4 读取和解析传入的 IPv4 UDP 数据包
+// UDPReadWorker4 读取传入的 IPv4 UDP 数据包
 func (s *Scanner) UDPReadWorker4() {
 	defer s.udpPacketListener4.Close()
 	data := make([]byte, 4096)
@@ -351,12 +360,12 @@ func (s *Scanner) UDPReadWorker4() {
 		if s.Phase.Is(Done) {
 			break
 		}
-		// nolint:errcheck // just empty the buffer
+		// 将数据包内容存储在缓存区
 		s.udpPacketListener4.ReadFrom(data)
 	}
 }
 
-// UDPReadWorker6 读取和解析传入的 ipv6 UDP 数据包
+// UDPReadWorker6 读取传入的 ipv6 UDP 数据包
 func (s *Scanner) UDPReadWorker6() {
 	defer s.udpPacketListener6.Close()
 	data := make([]byte, 4096)
@@ -364,12 +373,12 @@ func (s *Scanner) UDPReadWorker6() {
 		if s.Phase.Is(Done) {
 			break
 		}
-		// nolint:errcheck // just empty the buffer
+		// 将数据包内容存储在缓存区
 		s.udpPacketListener6.ReadFrom(data)
 	}
 }
 
-// TCPReadWorkerPCAP 使用 pcap 读取和解析传入的 TCP 数据包
+// TCPReadWorkerPCAP 使用处理器读取和解析传入的 TCP 数据包
 func (s *Scanner) TCPReadWorkerPCAP() {
 	if tcpReadWorkerPCAPCallback != nil {
 		tcpReadWorkerPCAPCallback(s)
@@ -383,9 +392,11 @@ func (s *Scanner) TransportWriteWorker() {
 	}
 }
 
-// send 将给定的层作为网络上的单个数据包发送
+// send 实现带有重试机制的发送数据包的功能，用于将序列化的网络层数据包发送到指定的目标 IP 地址
 func (s *Scanner) send(destIP string, conn net.PacketConn, l ...gopacket.SerializableLayer) error {
+	// 创建一个序列化缓冲区
 	buf := gopacket.NewSerializeBuffer()
+	// 使用 gopacket 库的 SerializeLayers 函数将层序列化到缓冲区
 	if err := gopacket.SerializeLayers(buf, s.serializeOptions, l...); err != nil {
 		return err
 	}
@@ -399,6 +410,7 @@ send:
 	if retries >= maxRetries {
 		return err
 	}
+	// 将序列化的数据包写入网络
 	_, err = conn.WriteTo(buf.Bytes(), &net.IPAddr{IP: net.ParseIP(destIP)})
 	if err != nil {
 		retries++
@@ -409,7 +421,7 @@ send:
 	return err
 }
 
-// SendAsyncPkg 将单个数据包发送到指定端口
+// SendAsyncPkg 构建和发送 TCP 数据包，实现异步的 TCPv4 端口扫描
 func (s *Scanner) SendAsyncPkg(ip string, p *portlist.Port, pkgFlag PkgFlag) {
 	isIP4 := iputil.IsIPv4(ip)
 	isIP6 := iputil.IsIPv6(ip)
@@ -435,6 +447,7 @@ func (s *Scanner) sendAsyncTCP4(ip string, p *portlist.Port, pkgFlag PkgFlag) {
 		TTL:      255,
 		Protocol: layers.IPProtocolTCP,
 	}
+	// 设置源 IP 地址，如果没有指定则使用路由器获取的源 IP 地址
 	if s.SourceIP4 != nil {
 		ip4.SrcIP = s.SourceIP4
 	} else {
@@ -447,12 +460,14 @@ func (s *Scanner) sendAsyncTCP4(ip string, p *portlist.Port, pkgFlag PkgFlag) {
 		ip4.SrcIP = sourceIP
 	}
 
+	// 构建 TCP 选项
 	tcpOption := layers.TCPOption{
 		OptionType:   layers.TCPOptionKindMSS,
 		OptionLength: 4,
 		OptionData:   []byte{0x05, 0xB4},
 	}
 
+	// 构建 TCP 头部
 	tcp := layers.TCP{
 		SrcPort: layers.TCPPort(s.SourcePort),
 		DstPort: layers.TCPPort(p.Port),
@@ -461,12 +476,14 @@ func (s *Scanner) sendAsyncTCP4(ip string, p *portlist.Port, pkgFlag PkgFlag) {
 		Options: []layers.TCPOption{tcpOption},
 	}
 
+	// 根据指定的标志设置 TCP 头部的标志位
 	if pkgFlag == Syn {
 		tcp.SYN = true
 	} else if pkgFlag == Ack {
 		tcp.ACK = true
 	}
 
+	// 设置 TCP 头部的校验和所需的网络层信息
 	err := tcp.SetNetworkLayerForChecksum(&ip4)
 	if err != nil {
 		logger.Info(fmt.Sprintf("Can not set network layer for %s:%d port: %s\n", ip, p.Port, err))
@@ -597,7 +614,7 @@ func (s *Scanner) sendAsyncUDP6(ip string, p *portlist.Port) {
 	}
 }
 
-// TCPResultWorker 处理探针和扫描结果
+// TCPResultWorker 处理 TCP 扫描结果
 func (s *Scanner) TCPResultWorker() {
 	for ip := range s.tcpChan {
 		if s.Phase.Is(HostDiscovery) {
@@ -610,7 +627,7 @@ func (s *Scanner) TCPResultWorker() {
 	}
 }
 
-// UDPResultWorker 处理探针和扫描结果
+// UDPResultWorker 处理 UDP 扫描结果
 func (s *Scanner) UDPResultWorker() {
 	for ip := range s.udpChan {
 		if s.Phase.Is(HostDiscovery) {
@@ -666,23 +683,28 @@ func (s *Scanner) canIScanIfCDN(ip string) (ipType string, isContinue bool) {
 
 // SetupHandler 监听指定的接口
 func (s *Scanner) SetupHandler(interfaceName string) error {
+	// 构建 BPF 过滤器
 	bpfFilter := fmt.Sprintf("dst port %d and (tcp or udp)", s.SourcePort)
+	// 执行回调函数
 	if setupHandlerCallback != nil {
 		err := setupHandlerCallback(s, interfaceName, bpfFilter, protocol.TCP)
 		if err != nil {
 			return err
 		}
 	}
-	// arp filter should be improved with source mac
+	// TODO：ARP 主要用来进行主机发现
+	//arp filter should be improved with source mac
 	// https://stackoverflow.com/questions/40196549/bpf-expression-to-capture-only-arp-reply-packets
 	// (arp[6:2] = 2) and dst host host and ether dst mac
-	bpfFilter = "arp"
-	if setupHandlerCallback != nil {
-		err := setupHandlerCallback(s, interfaceName, bpfFilter, protocol.ARP)
-		if err != nil {
-			return err
-		}
-	}
+	// 设置 arp 过滤器
+	//bpfFilter = "arp"
+	//// 执行回调函数
+	//if setupHandlerCallback != nil {
+	//	err := setupHandlerCallback(s, interfaceName, bpfFilter, protocol.ARP)
+	//	if err != nil {
+	//		return err
+	//	}
+	//}
 
 	return nil
 }
@@ -693,12 +715,13 @@ func (s *Scanner) SetupHandlers() error {
 		return s.SetupHandler(s.NetworkInterface.Name)
 	}
 
-	// 手动侦听所有接口
+	// 手动监听所有接口
 	itfs, err := net.Interfaces()
 	if err != nil {
 		return err
 	}
 	for _, itf := range itfs {
+		// 检查网络接口是否处于启用状态，如果网络接口状态为 Down（FlagUp == 0），则跳过对该接口的处理
 		isInterfaceDown := itf.Flags&net.FlagUp == 0
 		if isInterfaceDown {
 			continue
@@ -975,13 +998,16 @@ func (s *Scanner) SplitAndParseIP(targetIps []string) error {
 	return nil
 }
 
-// PickIP 选择 IP
+// PickIP 根据给定的索引值从一组 IP 地址范围中选择一个具体的 IP 地址
 func (s *Scanner) PickIP(targets []*net.IPNet, index int64) string {
 	for _, target := range targets {
+		// 获取当前子网中的 IP 地址总数
 		subnetIpsCount := int64(mapcidr.AddressCountIpnet(target))
+		// 如果目标索引在当前子网范围内，则选择该子网中的 IP
 		if index < subnetIpsCount {
 			return s.PickSubnetIP(target, index)
 		}
+		// 更新目标索引，减去当前子网中的 IP 地址总数
 		index -= subnetIpsCount
 	}
 
@@ -990,12 +1016,14 @@ func (s *Scanner) PickIP(targets []*net.IPNet, index int64) string {
 
 // PickSubnetIP 选择 IP
 func (s *Scanner) PickSubnetIP(network *net.IPNet, index int64) string {
+	// 将子网的 IP 地址转换为整数表示
 	ipInt, bits, err := mapcidr.IPToInteger(network.IP)
 	if err != nil {
-		gologger.Warning().Msgf("%s\n", err)
 		return ""
 	}
+	// 使用大整数操作，计算子网中的目标 IP 地址的整数表示
 	subnetIpInt := big.NewInt(0).Add(ipInt, big.NewInt(index))
+	// 将整数表示的 IP 转换为字符串表示
 	ip := mapcidr.IntegerToIP(subnetIpInt, bits)
 	return ip.String()
 }

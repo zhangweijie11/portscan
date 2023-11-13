@@ -37,7 +37,7 @@ type Handlers struct {
 	EthernetInactive  []*pcap.InactiveHandle
 }
 
-// 获取随机端口
+// 从操作系统获取随机端口
 func getFreePort() (int, error) {
 	rawPort, err := freeport.GetFreeTCPPort("")
 	if err != nil {
@@ -46,7 +46,7 @@ func getFreePort() (int, error) {
 	return rawPort.Port, nil
 }
 
-// NewScannerUnix 创建特定于 Unix 操作系统的新实例
+// NewScannerUnix 创建特定于 Unix 操作系统的扫描器
 func NewScannerUnix(scanner *Scanner) error {
 	if scanner.SourcePort <= 0 {
 		rawport, err := getFreePort()
@@ -56,53 +56,62 @@ func NewScannerUnix(scanner *Scanner) error {
 		scanner.SourcePort = rawport
 	}
 
+	// 创建IPv4 的 TCP 网络连接监听器
 	tcpConn4, err := net.ListenIP("ip4:tcp", &net.IPAddr{IP: net.ParseIP(fmt.Sprintf("0.0.0.0:%d", scanner.SourcePort))})
 	if err != nil {
 		return err
 	}
 	scanner.tcpPacketListener4 = tcpConn4
 
+	// 创建IPv4 的 UDP 网络连接监听器
 	udpConn4, err := net.ListenIP("ip4:udp", &net.IPAddr{IP: net.ParseIP(fmt.Sprintf("0.0.0.0:%d", scanner.SourcePort))})
 	if err != nil {
 		return err
 	}
 	scanner.udpPacketListener4 = udpConn4
 
-	tcpConn6, err := net.ListenIP("ip6:tcp", &net.IPAddr{IP: net.ParseIP(fmt.Sprintf(":::%d", scanner.SourcePort))})
-	if err != nil {
-		return err
-	}
-	scanner.tcpPacketListener6 = tcpConn6
-
-	udpConn6, err := net.ListenIP("ip6:udp", &net.IPAddr{IP: net.ParseIP(fmt.Sprintf(":::%d", scanner.SourcePort))})
-	if err != nil {
-		return err
-	}
-	scanner.udpPacketListener6 = udpConn6
-
-	var handlers Handlers
-	scanner.handlers = handlers
-
-	scanner.tcpChan = make(chan *PkgResult, chanSize)
-	scanner.udpChan = make(chan *PkgResult, chanSize)
-	scanner.transportPacketSend = make(chan *PkgSend, packetSendSize)
-
+	// 创建IPv4 的 ICMP 网络连接监听器，ICMP（Internet Control Message Protocol）监听器的作用在于监听和处理传入的 ICMP 数据包。 ICMP 是网络层协议，主要用于网络中的控制和错误消息。 ICMP 数据包通常用于报告网络的异常情况，例如主机不可达、超时等。
 	icmpConn4, err := icmp.ListenPacket("ip4:icmp", "0.0.0.0")
 	if err != nil {
 		return err
 	}
 	scanner.icmpPacketListener4 = icmpConn4
 
+	// 创建IPv6 的 TCP 网络连接监听器
+	tcpConn6, err := net.ListenIP("ip6:tcp", &net.IPAddr{IP: net.ParseIP(fmt.Sprintf(":::%d", scanner.SourcePort))})
+	if err != nil {
+		return err
+	}
+	scanner.tcpPacketListener6 = tcpConn6
+
+	// 创建IPv6 的 UDP 网络连接监听器
+	udpConn6, err := net.ListenIP("ip6:udp", &net.IPAddr{IP: net.ParseIP(fmt.Sprintf(":::%d", scanner.SourcePort))})
+	if err != nil {
+		return err
+	}
+	scanner.udpPacketListener6 = udpConn6
+
+	// 创建IPv6 的 ICMP 网络连接监听器
 	icmpConn6, err := icmp.ListenPacket("ip6:icmp", "::")
 	if err != nil {
 		return err
 	}
 	scanner.icmpPacketListener6 = icmpConn6
 
+	var handlers Handlers
+	scanner.handlers = handlers
+
+	// 创建结果通道
+	scanner.tcpChan = make(chan *PkgResult, chanSize)
+	scanner.udpChan = make(chan *PkgResult, chanSize)
 	scanner.hostDiscoveryChan = make(chan *PkgResult, chanSize)
+
+	// 创建发送通道
+	scanner.transportPacketSend = make(chan *PkgSend, packetSendSize)
 	scanner.icmpPacketSend = make(chan *PkgSend, packetSendSize)
 	scanner.ethernetPacketSend = make(chan *PkgSend, packetSendSize)
 
+	// 创建路由引擎
 	scanner.Router, err = routing.New()
 
 	return err
@@ -115,71 +124,81 @@ bpfFilter：BPF 过滤器，用于指定要捕获的数据包条件
 protocols：要捕获的协议类型
 */
 func SetupHandlerUnix(s *Scanner, interfaceName, bpfFilter string, protocols ...protocol.Protocol) error {
+	// 现有只有三个协议，TCP，UDP 和 ARP（弃用）
 	for _, proto := range protocols {
-		// 获取数据包捕获配置对象
+		// 创建未激活的PCAP句柄（handle），可以在配置捕获选项后再激活句柄
 		inactive, err := pcap.NewInactiveHandle(interfaceName)
 		if err != nil {
+			s.CleanupHandlers()
 			return err
 		}
 		// 设置捕获参数，包括快照长度snaplen 和读取超时 readtimeout，决定捕获数据包的行为
 		err = inactive.SetSnapLen(snaplen)
 		if err != nil {
+			s.CleanupHandlers()
 			return err
 		}
 
+		// 数捕数据包的读取超时时间
 		readTimeout := time.Duration(readtimeout) * time.Millisecond
 		if err = inactive.SetTimeout(readTimeout); err != nil {
 			s.CleanupHandlers()
 			return err
 		}
-		// 启用立即模式，方便数据包立即可用
+		// 启用立即模式，方便数据包在捕获后立即可用
 		err = inactive.SetImmediateMode(true)
-		if err != nil {
-			return err
-		}
-
-		handlers, ok := s.handlers.(Handlers)
-		if !ok {
-			return errors.New("无法创建处理器")
-		}
-
-		switch proto {
-		case protocol.TCP, protocol.UDP:
-			handlers.TransportInactive = append(handlers.TransportInactive, inactive)
-		case protocol.ARP:
-			continue
-			//handlers.EthernetInactive = append(handlers.EthernetInactive, inactive)
-		default:
-			logger.Warn("协议不支持")
-		}
-
-		// 激活 inactive，返回一个处理网络包的处理器
-		handle, err := inactive.Activate()
 		if err != nil {
 			s.CleanupHandlers()
 			return err
 		}
 
-		// 严格的BPF过滤器，目标端口等于发送方套接字源端口
+		handlers, ok := s.handlers.(Handlers)
+		if !ok {
+			s.CleanupHandlers()
+			return errors.New("无法创建处理器")
+		}
+
+		// 添加未激活句柄
+		switch proto {
+		case protocol.TCP, protocol.UDP:
+			handlers.TransportInactive = append(handlers.TransportInactive, inactive)
+		case protocol.ARP:
+			handlers.EthernetInactive = append(handlers.EthernetInactive, inactive)
+		default:
+			logger.Warn("协议不支持")
+		}
+
+		// 激活之前创建的未激活的 PCAP 句柄
+		handle, err := inactive.Activate()
+		// 激活失败进行资源清理
+		if err != nil {
+			s.CleanupHandlers()
+			return err
+		}
+
+		// 严格的BPF过滤器，确保只捕获满足条件的网络包
 		err = handle.SetBPFFilter(bpfFilter)
 		if err != nil {
+			s.CleanupHandlers()
 			return err
 		}
 		iface, err := net.InterfaceByName(interfaceName)
 		if err != nil {
+			s.CleanupHandlers()
 			return err
 		}
 
+		// 添加激活句柄
 		switch proto {
 		case protocol.TCP, protocol.UDP:
+			// 如果iface.Flags中包含回环标志（net.FlagLoopback），则添加处理器
 			if iface.Flags&net.FlagLoopback == net.FlagLoopback {
 				handlers.LoopbackHandlers = append(handlers.LoopbackHandlers, handle)
 			} else {
 				handlers.TransportActive = append(handlers.TransportActive, handle)
 			}
 		case protocol.ARP:
-			continue
-			//handlers.EthernetActive = append(handlers.EthernetActive, handle)
+			handlers.EthernetActive = append(handlers.EthernetActive, handle)
 		default:
 			logger.Warn("协议不支持")
 		}
@@ -191,6 +210,7 @@ func SetupHandlerUnix(s *Scanner, interfaceName, bpfFilter string, protocols ...
 
 // TransportReadWorkerPCAPUnix 处理网络数据包的捕获和分析
 func TransportReadWorkerPCAPUnix(s *Scanner) {
+	// 清理未激活的句柄和激活的处理器
 	defer s.CleanupHandlers()
 
 	var wgread sync.WaitGroup
@@ -208,15 +228,17 @@ func TransportReadWorkerPCAPUnix(s *Scanner) {
 		sourcePortMatches := tcpPortMatches || udpPortMatches
 		switch {
 		case !sourcePortMatches:
+			// 如果源端口不匹配，输出日志并丢弃数据包
 			logger.Info(fmt.Sprintf("Discarding Transport packet from non target ips: ip4=%s ip6=%s tcp_dport=%d udp_dport=%d\n", srcIP4, srcIP6, tcp.DstPort, udp.DstPort))
 		case tcpPortMatches && tcp.SYN && tcp.ACK:
+			// 如果是TCP数据包且目标端口匹配，并且同时设置了SYN和ACK标志，将结果发送到TCP通道
 			s.tcpChan <- &PkgResult{ip: ip, port: &portlist.Port{Port: int(tcp.SrcPort), Protocol: protocol.TCP}}
 		case udpPortMatches && udp.Length > 0: // 要更好地匹配 UDP 有效负载
+			// 如果是UDP数据包且目标端口匹配，并且UDP数据包的长度大于0，将结果发送到UDP通道
 			s.udpChan <- &PkgResult{ip: ip, port: &portlist.Port{Port: int(udp.SrcPort), Protocol: protocol.UDP}}
 		}
 	}
 
-	//// TODO: 没有明确处理器的作用，先注释
 	//loopBackScanCaseCallback := func(handler *pcap.Handle, wg *sync.WaitGroup) {
 	//	defer wg.Done()
 	//	// 基于 handler PCAP 处理器和链路类型 linktype 创建一个数据包源
@@ -278,13 +300,12 @@ func TransportReadWorkerPCAPUnix(s *Scanner) {
 	//	}
 	//}
 	//
-	//// TODO: 没有明确处理器的作用，先注释
 	//for _, handler := range handlers.LoopbackHandlers {
 	//	wgread.Add(1)
 	//	go loopBackScanCaseCallback(handler, &wgread)
 	//}
 
-	// 传输层读取器 （TCP|UDP）
+	// 传输层读取器 （TCP|UDP），并发处理网络数据包
 	for _, handler := range handlers.TransportActive {
 		wgread.Add(1)
 		go func(handler *pcap.Handle) {
@@ -298,10 +319,10 @@ func TransportReadWorkerPCAPUnix(s *Scanner) {
 				udp layers.UDP
 			)
 
-			// 与 MAC 的接口（物理 + 虚拟化）
+			// 带 MAC 的接口（物理 + 虚拟化）创建解析器
 			parser4Mac := gopacket.NewDecodingLayerParser(layers.LayerTypeEthernet, &eth, &ip4, &tcp, &udp)
 			parser6Mac := gopacket.NewDecodingLayerParser(layers.LayerTypeEthernet, &eth, &ip6, &tcp, &udp)
-			// 不带 MAC 的接口 （TUNTAP）
+			// 不带 MAC 的接口 （TUNTAP）创建解析器
 			parser4NoMac := gopacket.NewDecodingLayerParser(layers.LayerTypeIPv4, &ip4, &tcp, &udp)
 			parser6NoMac := gopacket.NewDecodingLayerParser(layers.LayerTypeIPv6, &ip6, &tcp, &udp)
 
@@ -313,10 +334,11 @@ func TransportReadWorkerPCAPUnix(s *Scanner) {
 			)
 
 			// 存储已解码协议层
-			decoded := []gopacket.LayerType{}
+			var decoded []gopacket.LayerType
 
 			// 循环处理从 handler 中读取的数据包
 			for {
+				// 从 pcap 句柄读取的数据包，以及与该数据包关联的错误代码
 				data, _, err := handler.ReadPacketData()
 				if err == io.EOF {
 					break
@@ -376,7 +398,7 @@ func TransportReadWorkerPCAPUnix(s *Scanner) {
 			parsers = append(parsers, parser4)
 
 			// 存储已解码的协议层
-			decoded := []gopacket.LayerType{}
+			var decoded []gopacket.LayerType
 
 			for {
 				data, _, err := handler.ReadPacketData()
