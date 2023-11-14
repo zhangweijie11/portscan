@@ -2,7 +2,7 @@ package global
 
 // 端口扫描相关
 const (
-	DefaultRateSynScan            = 1500 // 扫描类型为 Syn 的发包速率
+	DefaultRateSynScan            = 1000 // 扫描类型为 Syn 的发包速率
 	DefaultRateConnectScan        = 1500 // 扫描类型为 Connect 的发包速率
 	DefaultRetriesSynScan         = 2    // 端口扫描重试次数
 	DefaultRetriesConnectScan     = 2    // 端口扫描重试次数

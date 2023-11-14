@@ -31,7 +31,7 @@ func NewCollyScraper() *CollyScraper {
 	collyScraper.Transport = &http.Transport{
 		//用于创建未加密的TCP连接
 		DialContext: (&net.Dialer{
-			Timeout: time.Second * time.Duration(5),
+			Timeout: time.Second * 5,
 		}).DialContext,
 		//控制所有主机的最大空闲（保持活动）连接数。零表示没有限制。
 		MaxIdleConns: 100,
@@ -40,7 +40,7 @@ func NewCollyScraper() *CollyScraper {
 		//等待 TLS 握手的最长时间。零表示无超时。
 		TLSHandshakeTimeout: 5 * time.Second,
 		//如果非零，则指定在完全写入请求标头后等待服务器的第一个响应标头的时间量（如果请求具有“预期：100-continue”标头）。零表示没有超时，并导致正文立即发送，而无需等待服务器批准。此时间不包括发送请求标头的时间。
-		ExpectContinueTimeout: time.Duration(5) * time.Second,
+		ExpectContinueTimeout: 5 * time.Second,
 		TLSClientConfig:       &tls.Config{InsecureSkipVerify: true},
 	}
 	collyScraper.Collector = colly.NewCollector()

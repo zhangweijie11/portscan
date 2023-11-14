@@ -2,6 +2,7 @@ package scanner
 
 import (
 	"fmt"
+	"gitlab.example.com/zhangweijie/portscan/global"
 	"net"
 	"time"
 
@@ -12,7 +13,7 @@ import (
 func (s *Scanner) ConnectVerify(host string, ports []*portlist.Port) []*portlist.Port {
 	var verifiedPorts []*portlist.Port
 	for _, p := range ports {
-		conn, err := net.DialTimeout(p.Protocol.String(), fmt.Sprintf("%s:%d", host, p.Port), 3*time.Second)
+		conn, err := net.DialTimeout(p.Protocol.String(), fmt.Sprintf("%s:%d", host, p.Port), global.DefaultPortTimeoutConnectScan*time.Millisecond)
 		if err != nil {
 			continue
 		}

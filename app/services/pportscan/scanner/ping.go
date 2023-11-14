@@ -12,7 +12,7 @@ import (
 
 // Some constants
 const (
-	DeadlineSec      = 10
+	DeadlineSec      = 100
 	ProtocolICMP     = 1
 	ProtocolIPv6ICMP = 58
 )

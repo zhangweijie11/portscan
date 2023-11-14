@@ -34,8 +34,8 @@ import (
 )
 
 const (
-	maxRetries     = 10
-	sendDelayMsec  = 10
+	maxRetries     = 4
+	sendDelayMsec  = 100
 	chanSize       = 1000  //nolint
 	packetSendSize = 2500  //nolint
 	snaplen        = 65536 //nolint
