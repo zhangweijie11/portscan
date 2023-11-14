@@ -2,11 +2,11 @@ package global
 
 // 端口扫描相关
 const (
-	DefaultRateSynScan            = 1000 // 扫描类型为 Syn 的发包速率
-	DefaultRateConnectScan        = 1500 // 扫描类型为 Connect 的发包速率
+	DefaultRateSynScan            = 100  // 扫描类型为 Syn 的发包速率
+	DefaultRateConnectScan        = 150  // 扫描类型为 Connect 的发包速率
 	DefaultRetriesSynScan         = 2    // 端口扫描重试次数
 	DefaultRetriesConnectScan     = 2    // 端口扫描重试次数
-	DefaultPortTimeoutSynScan     = 3000 // 端口扫描超时时间
+	DefaultPortTimeoutSynScan     = 1000 // 端口扫描超时时间
 	DefaultPortTimeoutConnectScan = 3000 // 端口扫描超时时间
 	// 进行端口扫描时的 TOP 级别参数和全端口扫描参数
 	Full                  = "1-65535"
