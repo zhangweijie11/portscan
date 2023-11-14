@@ -165,7 +165,7 @@ func NewScanner(ctx context.Context, cdn, waf, cloud bool, scanType string) *Sca
 	scanner.ScanResults = result.NewPortScanResult()
 
 	// 如果是 root 权限用户，提供回调函数
-	if privileges.IsPrivileged && newScannerCallback != nil {
+	if privileges.IsPrivileged && scanType == global.SynScan && newScannerCallback != nil {
 		if err = newScannerCallback(scanner); err != nil {
 			return nil
 		}

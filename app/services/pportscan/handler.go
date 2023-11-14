@@ -104,9 +104,8 @@ func GetOpenPort(ctx context.Context, validIps []string, validPorts []*portlist.
 				}
 			}
 		}
+		scanner.WgScan.Wait()
 	}
-
-	scanner.WgScan.Wait()
 
 	time.Sleep(time.Second * 3)
 	scanner.Phase.Set(sc.Done)
