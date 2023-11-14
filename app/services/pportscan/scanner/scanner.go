@@ -34,8 +34,8 @@ import (
 )
 
 const (
-	maxRetries     = 4
-	sendDelayMsec  = 100
+	maxRetries     = 3
+	sendDelayMsec  = 1000
 	chanSize       = 1000  //nolint
 	packetSendSize = 2500  //nolint
 	snaplen        = 65536 //nolint
@@ -185,18 +185,45 @@ func (s *Scanner) CleanupHandlers() {
 func (s *Scanner) Close() {
 	_ = s.IPRanger.Hosts.Close()
 	s.CleanupHandlers()
-	s.tcpPacketListener4.Close()
-	s.udpPacketListener4.Close()
-	s.icmpPacketListener4.Close()
-	s.tcpPacketListener6.Close()
-	s.udpPacketListener6.Close()
-	s.icmpPacketListener6.Close()
-	close(s.transportPacketSend)
-	close(s.icmpPacketSend)
-	close(s.ethernetPacketSend)
-	close(s.tcpChan)
-	close(s.udpChan)
-	close(s.hostDiscoveryChan)
+	if s.tcpPacketListener4 != nil {
+		s.tcpPacketListener4.Close()
+	}
+	if s.udpPacketListener4 != nil {
+		s.udpPacketListener4.Close()
+	}
+	if s.icmpPacketListener4 != nil {
+		s.icmpPacketListener4.Close()
+	}
+	if s.tcpPacketListener6 != nil {
+		s.tcpPacketListener6.Close()
+	}
+	if s.udpPacketListener6 != nil {
+		s.udpPacketListener6.Close()
+	}
+	if s.icmpPacketListener6 != nil {
+		s.icmpPacketListener6.Close()
+	}
+	if s.transportPacketSend != nil {
+		close(s.transportPacketSend)
+	}
+	if s.transportPacketSend != nil {
+		close(s.transportPacketSend)
+	}
+	if s.icmpPacketSend != nil {
+		close(s.icmpPacketSend)
+	}
+	if s.ethernetPacketSend != nil {
+		close(s.ethernetPacketSend)
+	}
+	if s.tcpChan != nil {
+		close(s.tcpChan)
+	}
+	if s.udpChan != nil {
+		close(s.udpChan)
+	}
+	if s.hostDiscoveryChan != nil {
+		close(s.hostDiscoveryChan)
+	}
 }
 
 // StartWorkers 后台执行任务
