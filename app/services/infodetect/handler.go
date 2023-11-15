@@ -152,16 +152,17 @@ func InfoDetectMainWorker(ctx context.Context, work *toolModels.Work, validParam
 			// 通知消费者所有任务已经推送完毕
 			defer close(taskChan)
 			count := 0
-			// 超出限制的 IP 数量，则拆分 IP 进行异步任务操作
-			for ipStart := 0; ipStart < len(validIps); ipStart += global.DefaultIpGroupCount {
-				ipEnd := ipStart + global.DefaultIpGroupCount
-				if ipEnd > len(validIps) {
-					ipEnd = len(validIps)
+			// 超出限制端口数量，则拆分端口进行异步任务操作
+			for portStart := 0; portStart < len(validPorts); portStart += global.DefaultPortGroupCount {
+				portEnd := portStart + global.DefaultPortGroupCount
+				if portEnd > len(validPorts) {
+					portEnd = len(validPorts)
 				}
-				for portStart := 0; portStart < len(validPorts); portStart += global.DefaultPortGroupCount {
-					portEnd := portStart + global.DefaultPortGroupCount
-					if portEnd > len(validPorts) {
-						portEnd = len(validPorts)
+				// 超出限制的 IP 数量，则拆分 IP 进行异步任务操作
+				for ipStart := 0; ipStart < len(validIps); ipStart += global.DefaultIpGroupCount {
+					ipEnd := ipStart + global.DefaultIpGroupCount
+					if ipEnd > len(validIps) {
+						ipEnd = len(validIps)
 					}
 					task := Task{
 						WorkUUID:    work.UUID,

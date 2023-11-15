@@ -206,9 +206,6 @@ func (s *Scanner) Close() {
 	if s.transportPacketSend != nil {
 		close(s.transportPacketSend)
 	}
-	if s.transportPacketSend != nil {
-		close(s.transportPacketSend)
-	}
 	if s.icmpPacketSend != nil {
 		close(s.icmpPacketSend)
 	}
