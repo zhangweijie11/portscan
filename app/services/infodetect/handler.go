@@ -7,13 +7,13 @@ import (
 	"gitlab.example.com/zhangweijie/portscan/middlerware/schemas"
 	"gitlab.example.com/zhangweijie/portscan/services/common"
 	"gitlab.example.com/zhangweijie/portscan/services/infodetect/banner"
-	inforesult "gitlab.example.com/zhangweijie/portscan/services/infodetect/result"
+	infoResult "gitlab.example.com/zhangweijie/portscan/services/infodetect/result"
 	"gitlab.example.com/zhangweijie/portscan/services/infodetect/utils"
 	"gitlab.example.com/zhangweijie/portscan/services/pportscan"
 	"gitlab.example.com/zhangweijie/portscan/services/pportscan/portlist"
 	"gitlab.example.com/zhangweijie/portscan/services/service_recognize"
 	"gitlab.example.com/zhangweijie/portscan/services/service_recognize/nmap"
-	serviceresult "gitlab.example.com/zhangweijie/portscan/services/service_recognize/result"
+	serviceResult "gitlab.example.com/zhangweijie/portscan/services/service_recognize/result"
 	toolGlobal "gitlab.example.com/zhangweijie/tool-sdk/global"
 	toolSchemas "gitlab.example.com/zhangweijie/tool-sdk/middleware/schemas"
 	toolModels "gitlab.example.com/zhangweijie/tool-sdk/models"
@@ -28,7 +28,7 @@ type Worker struct {
 	Ctx        context.Context
 	Wg         *sync.WaitGroup
 	TaskChan   chan Task                          // 子任务通道
-	ResultChan chan inforesult.WorkerDetectResult // 子任务结果通道
+	ResultChan chan infoResult.WorkerDetectResult // 子任务结果通道
 }
 
 type Task struct {
@@ -44,7 +44,7 @@ type Task struct {
 }
 
 // NewWorker 初始化 worker
-func NewWorker(ctx context.Context, wg *sync.WaitGroup, id int, taskChan chan Task, resultChan chan inforesult.WorkerDetectResult) *Worker {
+func NewWorker(ctx context.Context, wg *sync.WaitGroup, id int, taskChan chan Task, resultChan chan infoResult.WorkerDetectResult) *Worker {
 	return &Worker{
 		ID:         id,
 		Ctx:        ctx,
@@ -62,8 +62,8 @@ func calculateChanCap(ipLength, portLength int) int {
 	return ipLen * portLen
 }
 
-func mergeResult(portScanIpStatus map[string]string, serviceRecognizeScanResults map[string]map[int]*serviceresult.Response) inforesult.WorkerDetectResult {
-	var detectResult inforesult.WorkerDetectResult
+func mergeResult(portScanIpStatus map[string]string, serviceRecognizeScanResults map[string]map[int]*serviceResult.Response) infoResult.WorkerDetectResult {
+	var detectResult infoResult.WorkerDetectResult
 	detectResult.IpType = portScanIpStatus
 	for ip, recognizeResult := range detectResult.ServiceRecognizeResult {
 		if len(recognizeResult) > 0 {
@@ -137,7 +137,7 @@ func InfoDetectMainWorker(ctx context.Context, work *toolModels.Work, validParam
 		maxBufferSize := calculateChanCap(len(validIps), len(validPorts))
 		onePercent := float64(100 / maxBufferSize)
 		taskChan := make(chan Task, maxBufferSize)
-		resultChan := make(chan inforesult.WorkerDetectResult, maxBufferSize)
+		resultChan := make(chan infoResult.WorkerDetectResult, maxBufferSize)
 		var wg sync.WaitGroup
 		// 创建并启动多个工作者
 		for i := 0; i < toolGlobal.Config.Server.Worker; i++ {
@@ -187,7 +187,7 @@ func InfoDetectMainWorker(ctx context.Context, work *toolModels.Work, validParam
 		}()
 
 		// 中间需要进行数据结构转换
-		tmpResult := inforesult.NewWorkerDetectResult()
+		tmpResult := infoResult.NewWorkerDetectResult()
 		// 回收结果
 		for workerDetectResult := range resultChan {
 			for ip, portResponse := range workerDetectResult.ServiceRecognizeResult {
@@ -215,19 +215,19 @@ func InfoDetectMainWorker(ctx context.Context, work *toolModels.Work, validParam
 			}
 		}
 
-		baseFinalResult := make(map[string]inforesult.InfoDetectResult)
+		baseFinalResult := make(map[string]infoResult.InfoDetectResult)
 
-		var finalResult []inforesult.InfoDetectResult
+		var finalResult []infoResult.InfoDetectResult
 		for _, ip := range validIps {
-			infoDetectResult := inforesult.InfoDetectResult{Ip: ip, IpType: "other"}
+			infoDetectResult := infoResult.InfoDetectResult{Ip: ip, IpType: "other"}
 			baseFinalResult[ip] = infoDetectResult
 		}
 		for ip, serviceRecognizeResult := range tmpResult.ServiceRecognizeResult {
-			var portResult []*serviceresult.Response
+			var portResult []*serviceResult.Response
 			for _, response := range serviceRecognizeResult {
 				portResult = append(portResult, response)
 			}
-			infoDetectResult := inforesult.InfoDetectResult{
+			infoDetectResult := infoResult.InfoDetectResult{
 				Ip:         ip,
 				IpType:     tmpResult.IpType[ip],
 				PortResult: portResult,
