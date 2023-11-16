@@ -292,8 +292,6 @@ github.com/yl2chen/cidranger v1.0.2 h1:lbOWZVCG1tCRX4u24kuM1Tb4nHqWkDxwLdoS+Seva
 github.com/yl2chen/cidranger v1.0.2/go.mod h1:9U1yz7WPYDwf0vpNWFaeRh0bjwz5RVgRy/9UEQfHl0g=
 github.com/yuin/goldmark v1.4.13/go.mod h1:6yULJ656Px+3vBD8DxQVa3kxgyrAnzto9xy5taEt/CY=
 github.com/zenazn/goji v0.9.0/go.mod h1:7S9M489iMyHBNxwZnk9/EHS098H4/F6TATF2mIxtB1Q=
-gitlab.example.com/zhangweijie/tool-sdk v0.7.0 h1:+WuIZDuc9/R5+YMnZkDTVQlQdIO+/WXQXUNipZMPhAQ=
-gitlab.example.com/zhangweijie/tool-sdk v0.7.0/go.mod h1:AS1OQXBt8gpVhncoq3PR2UwvTCp49IES+idkCih9k6k=
 gitlab.example.com/zhangweijie/tool-sdk v0.7.1 h1:oq60hRomioZx0KAxdjUgFAfOcXbcWXejXkfIxbPz5pc=
 gitlab.example.com/zhangweijie/tool-sdk v0.7.1/go.mod h1:AS1OQXBt8gpVhncoq3PR2UwvTCp49IES+idkCih9k6k=
 go.etcd.io/bbolt v1.3.7 h1:j+zJOnnEjF/kyHlDDgGnVL/AIqIJPq8UoB2GSNfkUfQ=
