@@ -7,7 +7,7 @@ import (
 	"gitlab.example.com/zhangweijie/portscan/middlerware/schemas"
 	"gitlab.example.com/zhangweijie/portscan/services/common"
 	"gitlab.example.com/zhangweijie/portscan/services/infodetect/banner"
-	infoResult "gitlab.example.com/zhangweijie/portscan/services/infodetect/result"
+	"gitlab.example.com/zhangweijie/portscan/services/infodetect/result"
 	"gitlab.example.com/zhangweijie/portscan/services/infodetect/utils"
 	"gitlab.example.com/zhangweijie/portscan/services/pportscan"
 	"gitlab.example.com/zhangweijie/portscan/services/pportscan/portlist"
@@ -27,8 +27,8 @@ type Worker struct {
 	ID         int // 任务执行者 ID
 	Ctx        context.Context
 	Wg         *sync.WaitGroup
-	TaskChan   chan Task                          // 子任务通道
-	ResultChan chan infoResult.WorkerDetectResult // 子任务结果通道
+	TaskChan   chan Task                      // 子任务通道
+	ResultChan chan result.WorkerDetectResult // 子任务结果通道
 }
 
 type Task struct {
@@ -44,7 +44,7 @@ type Task struct {
 }
 
 // NewWorker 初始化 worker
-func NewWorker(ctx context.Context, wg *sync.WaitGroup, id int, taskChan chan Task, resultChan chan infoResult.WorkerDetectResult) *Worker {
+func NewWorker(ctx context.Context, wg *sync.WaitGroup, id int, taskChan chan Task, resultChan chan result.WorkerDetectResult) *Worker {
 	return &Worker{
 		ID:         id,
 		Ctx:        ctx,
@@ -62,8 +62,8 @@ func calculateChanCap(ipLength, portLength int) int {
 	return ipLen * portLen
 }
 
-func mergeResult(portScanIpStatus map[string]string, serviceRecognizeScanResults map[string]map[int]*serviceResult.Response) infoResult.WorkerDetectResult {
-	var detectResult infoResult.WorkerDetectResult
+func mergeResult(portScanIpStatus map[string]string, serviceRecognizeResult map[string]map[int]*serviceResult.RecognizeResponse) result.WorkerDetectResult {
+	var detectResult result.WorkerDetectResult
 	detectResult.IpType = portScanIpStatus
 	for ip, recognizeResult := range detectResult.ServiceRecognizeResult {
 		if len(recognizeResult) > 0 {
@@ -71,7 +71,7 @@ func mergeResult(portScanIpStatus map[string]string, serviceRecognizeScanResults
 		}
 	}
 
-	detectResult.ServiceRecognizeResult = serviceRecognizeScanResults
+	detectResult.ServiceRecognizeResult = serviceRecognizeResult
 
 	return detectResult
 }
@@ -137,7 +137,7 @@ func InfoDetectMainWorker(ctx context.Context, work *toolModels.Work, validParam
 		maxBufferSize := calculateChanCap(len(validIps), len(validPorts))
 		onePercent := float64(100 / maxBufferSize)
 		taskChan := make(chan Task, maxBufferSize)
-		resultChan := make(chan infoResult.WorkerDetectResult, maxBufferSize)
+		resultChan := make(chan result.WorkerDetectResult, maxBufferSize)
 		var wg sync.WaitGroup
 		// 创建并启动多个工作者
 		for i := 0; i < toolGlobal.Config.Server.Worker; i++ {
@@ -187,7 +187,7 @@ func InfoDetectMainWorker(ctx context.Context, work *toolModels.Work, validParam
 		}()
 
 		// 中间需要进行数据结构转换
-		tmpResult := infoResult.NewWorkerDetectResult()
+		tmpResult := result.NewWorkerDetectResult()
 		// 回收结果
 		for workerDetectResult := range resultChan {
 			for ip, portResponse := range workerDetectResult.ServiceRecognizeResult {
@@ -204,7 +204,7 @@ func InfoDetectMainWorker(ctx context.Context, work *toolModels.Work, validParam
 					tmpResult.IpType[ip] = "isValuable"
 				}
 				for port, response := range portResponse {
-					tmpResult.AddRecognizeResult(ip, port, response)
+					tmpResult.AddServiceRecognizeResult(ip, port, response)
 				}
 			}
 			if work.ProgressType != "" && work.ProgressUrl != "" {
@@ -215,19 +215,19 @@ func InfoDetectMainWorker(ctx context.Context, work *toolModels.Work, validParam
 			}
 		}
 
-		baseFinalResult := make(map[string]infoResult.InfoDetectResult)
+		baseFinalResult := make(map[string]result.InfoDetectResult)
 
-		var finalResult []infoResult.InfoDetectResult
+		var finalResult []result.InfoDetectResult
 		for _, ip := range validIps {
-			infoDetectResult := infoResult.InfoDetectResult{Ip: ip, IpType: "other"}
+			infoDetectResult := result.InfoDetectResult{Ip: ip, IpType: "other"}
 			baseFinalResult[ip] = infoDetectResult
 		}
 		for ip, serviceRecognizeResult := range tmpResult.ServiceRecognizeResult {
-			var portResult []*serviceResult.Response
+			var portResult []*serviceResult.RecognizeResponse
 			for _, response := range serviceRecognizeResult {
 				portResult = append(portResult, response)
 			}
-			infoDetectResult := infoResult.InfoDetectResult{
+			infoDetectResult := result.InfoDetectResult{
 				Ip:         ip,
 				IpType:     tmpResult.IpType[ip],
 				PortResult: portResult,
@@ -235,8 +235,8 @@ func InfoDetectMainWorker(ctx context.Context, work *toolModels.Work, validParam
 			baseFinalResult[ip] = infoDetectResult
 		}
 
-		for _, result := range baseFinalResult {
-			finalResult = append(finalResult, result)
+		for _, baseResult := range baseFinalResult {
+			finalResult = append(finalResult, baseResult)
 		}
 
 		if work.CallbackType != "" && work.CallbackUrl != "" {

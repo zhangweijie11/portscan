@@ -7,7 +7,7 @@ import (
 	"gitlab.example.com/zhangweijie/portscan/services/service_recognize/result"
 )
 
-func GetService(ctx context.Context, portScanResults map[string][]int, nmap *nmap.Nmap) map[string]map[int]*result.Response {
+func GetService(ctx context.Context, portScanResults map[string][]int, nmap *nmap.Nmap) map[string]map[int]*result.RecognizeResponse {
 	recognizer := rr.NewRecognizer(ctx)
 	recognizer.Nmap = nmap
 	for ip, ports := range portScanResults {

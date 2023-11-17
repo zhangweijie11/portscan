@@ -35,10 +35,10 @@ func (s Status) String() string {
 // RecognizeResult 服务识别结果
 type RecognizeResult struct {
 	sync.RWMutex
-	RecognizeResponses map[string]map[int]*Response
+	RecognizeResponses map[string]map[int]*RecognizeResponse
 }
 
-type Response struct {
+type RecognizeResponse struct {
 	IP          string                   `json:"ip"`
 	Port        int                      `json:"port"`
 	Status      string                   `json:"status"`
@@ -48,13 +48,13 @@ type Response struct {
 	//ResponseRaw string                   `json:"responseRaw"`
 }
 
-// AddResponse  添加具体的响应数据
-func (rr *RecognizeResult) AddResponse(ip string, port int, response *Response) {
+// AddRecognizeResponse  添加具体的响应数据
+func (rr *RecognizeResult) AddRecognizeResponse(ip string, port int, response *RecognizeResponse) {
 	rr.Lock()
 	defer rr.Unlock()
 
 	if _, ok := rr.RecognizeResponses[ip]; !ok {
-		rr.RecognizeResponses[ip] = make(map[int]*Response)
+		rr.RecognizeResponses[ip] = make(map[int]*RecognizeResponse)
 	}
 
 	rr.RecognizeResponses[ip][port] = response
@@ -64,11 +64,11 @@ func (rr *RecognizeResult) AddResponse(ip string, port int, response *Response) 
 // NewRecognizeResult 初始化结果结构体
 func NewRecognizeResult() *RecognizeResult {
 	return &RecognizeResult{
-		RecognizeResponses: make(map[string]map[int]*Response),
+		RecognizeResponses: make(map[string]map[int]*RecognizeResponse),
 	}
 }
 
 // NewResponse 初始化响应数据结构体
-func NewResponse(ip string, port int, status Status) *Response {
-	return &Response{IP: ip, Port: port, Status: status.String(), Fingerprint: &fingerprint.Fingerprint{}}
+func NewResponse(ip string, port int, status Status) *RecognizeResponse {
+	return &RecognizeResponse{IP: ip, Port: port, Status: status.String(), Fingerprint: &fingerprint.Fingerprint{}}
 }

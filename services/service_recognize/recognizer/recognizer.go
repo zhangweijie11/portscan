@@ -53,6 +53,6 @@ func (r *Recognizer) RecognizeService(ip string, port int) {
 			response.Protocol = response.Fingerprint.Service
 		}
 		response.Status = status.String()
-		r.RecognizeResults.AddResponse(ip, port, response)
+		r.RecognizeResults.AddRecognizeResponse(ip, port, response)
 	}
 }

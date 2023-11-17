@@ -284,7 +284,7 @@ func (n *Nmap) sortOfRarity(probeList ProbeList) ProbeList {
 }
 
 // ScanService  当扫描出开放端口后，再次扫描进行服务识别等操作
-func (n *Nmap) ScanService(ip string, port int) (status result.Status, response *result.Response) {
+func (n *Nmap) ScanService(ip string, port int) (status result.Status, response *result.RecognizeResponse) {
 	var probeNames ProbeList
 	//如果端口为需要绕过的端口，则把默认的探针加载到该端口对应的探针列表中，反之则把该端口的探针加载到默认的全部探针列表中，保证使用的探针都是和该端口相关的
 	if n.bypassAllProbePort.Exist(port) == true {
@@ -308,7 +308,7 @@ func (n *Nmap) ScanService(ip string, port int) (status result.Status, response 
 }
 
 // 获取真实响应
-func (n *Nmap) getRealResponse(host string, port int, timeout time.Duration, probes ...string) (status result.Status, response *result.Response) {
+func (n *Nmap) getRealResponse(host string, port int, timeout time.Duration, probes ...string) (status result.Status, response *result.RecognizeResponse) {
 	status, response = n.getResponseByProbes(host, port, timeout, probes...)
 	// 如果服务识别未成功，继续根据其他探针进行服务识别
 	if status != result.Matched {
@@ -325,8 +325,8 @@ func (n *Nmap) getRealResponse(host string, port int, timeout time.Duration, pro
 }
 
 // 通过探针获取响应
-func (n *Nmap) getResponseByProbes(host string, port int, timeout time.Duration, probes ...string) (status result.Status, response *result.Response) {
-	var responseNotMatch *result.Response
+func (n *Nmap) getResponseByProbes(host string, port int, timeout time.Duration, probes ...string) (status result.Status, response *result.RecognizeResponse) {
+	var responseNotMatch *result.RecognizeResponse
 	for _, probeName := range probes {
 		////不重复使用探针，仅适用于单个 IP+PORT 的扫描情况，一旦多 IP+多 PORT 会出现少使用探针的情况
 		//if n.probeUsed.exist(probeName) {
@@ -352,7 +352,7 @@ func (n *Nmap) getResponseByProbes(host string, port int, timeout time.Duration,
 }
 
 // 通过 SSL 探针二次获取响应
-func (n *Nmap) getResponseBySSLSecondProbes(host string, port int, timeout time.Duration) (status result.Status, response *result.Response) {
+func (n *Nmap) getResponseBySSLSecondProbes(host string, port int, timeout time.Duration) (status result.Status, response *result.RecognizeResponse) {
 	status, response = n.getResponseByProbes(host, port, timeout, n.sslSecondProbeMap...)
 	// 如果服务识别失败或者探针自带的开放服务为 SSL，则继续探测，TLS 参数设置为 true
 	if status != result.Matched || response.Fingerprint.Service == "ssl" {
@@ -370,17 +370,17 @@ func (n *Nmap) getResponseBySSLSecondProbes(host string, port int, timeout time.
 }
 
 // 通过 HTTPS 获取响应
-func (n *Nmap) getResponseByHTTPS(host string, port int, timeout time.Duration) (status result.Status, response *result.Response) {
+func (n *Nmap) getResponseByHTTPS(host string, port int, timeout time.Duration) (status result.Status, response *result.RecognizeResponse) {
 	var httpRequest = n.probeNameMap["TCP_GetRequest"]
 	return n.getResponse(host, port, true, timeout, httpRequest)
 }
 
 // 获取响应基础方法
-func (n *Nmap) getResponse(host string, port int, tls bool, timeout time.Duration, probe *Probe) (result.Status, *result.Response) {
+func (n *Nmap) getResponse(host string, port int, tls bool, timeout time.Duration, probe *Probe) (result.Status, *result.RecognizeResponse) {
 	//DNS 服务默认端口为 53，判定是否为 DNS 服务,如果没有使用 DNS，则默认端口不开放
 	if port == 53 {
 		if n.dnsScan(host, port) {
-			return result.Matched, &result.Response{
+			return result.Matched, &result.RecognizeResponse{
 				IP:   host,
 				Port: port,
 				//ResponseRaw: "DnsServer",
@@ -411,7 +411,7 @@ func (n *Nmap) getResponse(host string, port int, tls bool, timeout time.Duratio
 		return result.Open, nil
 	}
 
-	response := &result.Response{
+	response := &result.RecognizeResponse{
 		IP:   host,
 		Port: port,
 		//ResponseRaw: strings.TrimSpace(text),
