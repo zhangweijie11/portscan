@@ -76,15 +76,16 @@ func PingIcmpEchoRequest(ip string, timeout time.Duration) bool {
 	return false
 }
 
-// PingIcmpEchoRequestAsync 与目标 IP 地址异步
+// PingIcmpEchoRequestAsync 异步发送 ICMP 回显请求（ping 请求）到指定的 IP 地址
 func PingIcmpEchoRequestAsync(s *Scanner, ip string) {
 	destinationIP := net.ParseIP(ip)
 	var destAddr net.Addr
+	// ICMP 消息
 	m := icmp.Message{
 		Code: 0,
 		Body: &icmp.Echo{
-			ID:   os.Getpid() & 0xffff,
-			Seq:  1,
+			ID:   os.Getpid() & 0xffff, // 当前进程 ID 与 0xffff 进行位于操作生成 ICMP 消息的标识符
+			Seq:  1,                    // 序列号
 			Data: []byte(""),
 		},
 	}
@@ -174,7 +175,7 @@ func PingIcmpTimestampRequest(ip string, timeout time.Duration) bool {
 	return false
 }
 
-// PingIcmpTimestampRequestAsync 同步到目标 IP 地址 - 仅限 IPv
+// PingIcmpTimestampRequestAsync 向指定的 IPv4 地址发送 ICMP 时间戳请求
 func PingIcmpTimestampRequestAsync(s *Scanner, ip string) {
 	if !iputil.IsIPv4(ip) {
 		return
@@ -184,8 +185,8 @@ func PingIcmpTimestampRequestAsync(s *Scanner, ip string) {
 		Type: ipv4.ICMPTypeTimestamp,
 		Code: 0,
 		Body: &Timestamp{
-			ID:              os.Getpid() & 0xffff,
-			Seq:             0,
+			ID:              os.Getpid() & 0xffff, // 当前进程 ID 与 0xffff 进行位于操作生成 ICMP 消息的标识符
+			Seq:             0,                    // 序列号
 			OriginTimestamp: 0,
 		},
 	}
@@ -261,14 +262,14 @@ func ParseTimestamp(_ int, b []byte) (icmp.MessageBody, error) {
 	return p, nil
 }
 
-// PingIcmpAddressMaskRequestAsync 异步到目标 IP 地址 - 仅限 IPv4
+// PingIcmpAddressMaskRequestAsync 异步发送 ICMP 地址掩码请求到指定的 IPv4 地址，ICMP 地址掩码请求是一种询问目标主机的子网掩码的 ICMP 类型请求
 func PingIcmpAddressMaskRequestAsync(s *Scanner, ip string) {
 	if !iputil.IsIPv4(ip) {
 		return
 	}
 	destAddr := &net.IPAddr{IP: net.ParseIP(ip)}
 	m := icmp.Message{
-		Type: ipv4.ICMPType(17),
+		Type: ipv4.ICMPType(17), // 17 表示是地址掩码请求
 		Code: 0,
 		Body: &AddressMask{
 			ID:          os.Getpid() & 0xffff,

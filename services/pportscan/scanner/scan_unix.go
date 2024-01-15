@@ -30,8 +30,8 @@ func init() {
 
 // Handlers 包含 PCAP 处理程序的列表
 type Handlers struct {
-	TransportActive   []*pcap.Handle
 	LoopbackHandlers  []*pcap.Handle
+	TransportActive   []*pcap.Handle
 	TransportInactive []*pcap.InactiveHandle
 	EthernetActive    []*pcap.Handle
 	EthernetInactive  []*pcap.InactiveHandle
@@ -102,9 +102,21 @@ func NewScannerUnix(scanner *Scanner) error {
 	scanner.handlers = handlers
 
 	// 创建结果通道
-	scanner.tcpChan = make(chan *PkgResult, chanSize)
-	scanner.udpChan = make(chan *PkgResult, chanSize)
-	scanner.hostDiscoveryChan = make(chan *PkgResult, chanSize)
+	scanner.tcpChan = PkgResultChan{
+		RWMutex:   sync.RWMutex{},
+		PkgResult: make(chan *PkgResult, chanSize),
+		closed:    false,
+	}
+	scanner.udpChan = PkgResultChan{
+		RWMutex:   sync.RWMutex{},
+		PkgResult: make(chan *PkgResult, chanSize),
+		closed:    false,
+	}
+	scanner.hostDiscoveryChan = PkgResultChan{
+		RWMutex:   sync.RWMutex{},
+		PkgResult: make(chan *PkgResult, chanSize),
+		closed:    false,
+	}
 
 	// 创建发送通道
 	scanner.transportPacketSend = make(chan *PkgSend, packetSendSize)
@@ -124,22 +136,22 @@ bpfFilter：BPF 过滤器，用于指定要捕获的数据包条件
 protocols：要捕获的协议类型
 */
 func SetupHandlerUnix(s *Scanner, interfaceName, bpfFilter string, protocols ...protocol.Protocol) error {
-	// 现有只有三个协议，TCP，UDP 和 ARP（弃用）
+	// 现有只有三个协议，TCP，UDP 和 ARP
 	for _, proto := range protocols {
 		// 创建未激活的PCAP句柄（handle），可以在配置捕获选项后再激活句柄
 		inactive, err := pcap.NewInactiveHandle(interfaceName)
 		if err != nil {
-			s.CleanupHandlers()
+			//s.CleanupHandlers()
 			return err
 		}
 		// 设置捕获参数，包括快照长度snaplen 和读取超时 readtimeout，决定捕获数据包的行为
 		err = inactive.SetSnapLen(snaplen)
 		if err != nil {
-			s.CleanupHandlers()
+			//s.CleanupHandlers()
 			return err
 		}
 
-		// 数捕数据包的读取超时时间
+		// 数据包的读取超时时间
 		readTimeout := time.Duration(readtimeout) * time.Millisecond
 		if err = inactive.SetTimeout(readTimeout); err != nil {
 			s.CleanupHandlers()
@@ -148,13 +160,13 @@ func SetupHandlerUnix(s *Scanner, interfaceName, bpfFilter string, protocols ...
 		// 启用立即模式，方便数据包在捕获后立即可用
 		err = inactive.SetImmediateMode(true)
 		if err != nil {
-			s.CleanupHandlers()
+			//s.CleanupHandlers()
 			return err
 		}
 
 		handlers, ok := s.handlers.(Handlers)
 		if !ok {
-			s.CleanupHandlers()
+			//s.CleanupHandlers()
 			return errors.New("无法创建处理器")
 		}
 
@@ -179,12 +191,12 @@ func SetupHandlerUnix(s *Scanner, interfaceName, bpfFilter string, protocols ...
 		// 严格的BPF过滤器，确保只捕获满足条件的网络包
 		err = handle.SetBPFFilter(bpfFilter)
 		if err != nil {
-			s.CleanupHandlers()
+			//s.CleanupHandlers()
 			return err
 		}
 		iface, err := net.InterfaceByName(interfaceName)
 		if err != nil {
-			s.CleanupHandlers()
+			//s.CleanupHandlers()
 			return err
 		}
 
@@ -229,81 +241,87 @@ func TransportReadWorkerPCAPUnix(s *Scanner) {
 		switch {
 		case !sourcePortMatches:
 			// 如果源端口不匹配，输出日志并丢弃数据包
-			logger.Info(fmt.Sprintf("Discarding Transport packet from non target ips: ip4=%s ip6=%s tcp_dport=%d udp_dport=%d\n", srcIP4, srcIP6, tcp.DstPort, udp.DstPort))
+			logger.Info(fmt.Sprintf("Discarding Transport packet from non target ips: ip4=%s ip6=%s tcp_dport=%d udp_dport=%d", srcIP4, srcIP6, tcp.DstPort, udp.DstPort))
+		case s.Phase.Is(HostDiscovery):
+			proto := protocol.TCP
+			if udpPortMatches {
+				proto = protocol.UDP
+			}
+			s.hostDiscoveryChan.Send(&PkgResult{ip: ip, port: &portlist.Port{Port: int(tcp.SrcPort), Protocol: proto}})
 		case tcpPortMatches && tcp.SYN && tcp.ACK:
 			// 如果是TCP数据包且目标端口匹配，并且同时设置了SYN和ACK标志，将结果发送到TCP通道
-			s.tcpChan <- &PkgResult{ip: ip, port: &portlist.Port{Port: int(tcp.SrcPort), Protocol: protocol.TCP}}
+			s.tcpChan.Send(&PkgResult{ip: ip, port: &portlist.Port{Port: int(tcp.SrcPort), Protocol: protocol.TCP}})
 		case udpPortMatches && udp.Length > 0: // 要更好地匹配 UDP 有效负载
 			// 如果是UDP数据包且目标端口匹配，并且UDP数据包的长度大于0，将结果发送到UDP通道
-			s.udpChan <- &PkgResult{ip: ip, port: &portlist.Port{Port: int(udp.SrcPort), Protocol: protocol.UDP}}
+			s.udpChan.Send(&PkgResult{ip: ip, port: &portlist.Port{Port: int(udp.SrcPort), Protocol: protocol.UDP}})
 		}
 	}
 
-	//loopBackScanCaseCallback := func(handler *pcap.Handle, wg *sync.WaitGroup) {
-	//	defer wg.Done()
-	//	// 基于 handler PCAP 处理器和链路类型 linktype 创建一个数据包源
-	//	packetSource := gopacket.NewPacketSource(handler, handler.LinkType())
-	//	for packet := range packetSource.Packets() {
-	//		tcp := &layers.TCP{}
-	//		udp := &layers.UDP{}
-	//		// 从数据包中提取网络层（IPv4或IPv6）和传输层（TCP或UDP）的信息
-	//		for _, layerType := range packet.Layers() {
-	//			ipLayer := packet.Layer(layers.LayerTypeIPv4)
-	//			if ipLayer == nil {
-	//				ipLayer = packet.Layer(layers.LayerTypeIPv6)
-	//				if ipLayer == nil {
-	//					continue
-	//				}
-	//			}
-	//			// 确定源 IP 地址
-	//			var srcIP4, srcIP6 string
-	//			if ipv4, ok := ipLayer.(*layers.IPv4); ok {
-	//				srcIP4 = ipv4.SrcIP.String()
-	//			} else if ipv6, ok := ipLayer.(*layers.IPv6); ok {
-	//				srcIP6 = ipv6.SrcIP.String()
-	//			}
-	//
-	//			// 确定传输层类型
-	//			tcpLayer := packet.Layer(layers.LayerTypeTCP)
-	//			if tcpLayer != nil {
-	//				tcp, ok = tcpLayer.(*layers.TCP)
-	//				if !ok {
-	//					continue
-	//				}
-	//			}
-	//			udpLayer := packet.Layer(layers.LayerTypeUDP)
-	//			if udpLayer != nil {
-	//				udp, ok = udpLayer.(*layers.UDP)
-	//				if !ok {
-	//					continue
-	//				}
-	//			}
-	//
-	//			// 只有传输层协议为 TCP或 UDP 时才会继续处理
-	//			if layerType.LayerType() == layers.LayerTypeTCP || layerType.LayerType() == layers.LayerTypeUDP {
-	//				srcPort := fmt.Sprint(int(tcp.SrcPort))
-	//				srcIP4WithPort := net.JoinHostPort(srcIP4, srcPort)
-	//				isIP4InRange := s.IPRanger.ContainsAny(srcIP4, srcIP4WithPort)
-	//				srcIP6WithPort := net.JoinHostPort(srcIP6, srcPort)
-	//				isIP6InRange := s.IPRanger.ContainsAny(srcIP6, srcIP6WithPort)
-	//				var ip string
-	//				if isIP4InRange {
-	//					ip = srcIP4
-	//				} else if isIP6InRange {
-	//					ip = srcIP6
-	//				} else {
-	//					logger.Info(fmt.Sprintf("Discarding Transport packet from non target ips: ip4=%s ip6=%s\n", srcIP4, srcIP6))
-	//				}
-	//				transportReaderCallback(*tcp, *udp, ip, srcIP4, srcIP6)
-	//			}
-	//		}
-	//	}
-	//}
-	//
-	//for _, handler := range handlers.LoopbackHandlers {
-	//	wgread.Add(1)
-	//	go loopBackScanCaseCallback(handler, &wgread)
-	//}
+	loopBackScanCaseCallback := func(handler *pcap.Handle, wg *sync.WaitGroup) {
+		defer wg.Done()
+		// 基于 handler PCAP 处理器和链路类型 linktype 创建一个数据包源
+		packetSource := gopacket.NewPacketSource(handler, handler.LinkType())
+		for packet := range packetSource.Packets() {
+			tcp := &layers.TCP{}
+			udp := &layers.UDP{}
+			// 从数据包中提取网络层（IPv4或IPv6）和传输层（TCP或UDP）的信息
+			for _, layerType := range packet.Layers() {
+				ipLayer := packet.Layer(layers.LayerTypeIPv4)
+				if ipLayer == nil {
+					ipLayer = packet.Layer(layers.LayerTypeIPv6)
+					if ipLayer == nil {
+						continue
+					}
+				}
+				// 确定源 IP 地址
+				var srcIP4, srcIP6 string
+				if ipv4, ok := ipLayer.(*layers.IPv4); ok {
+					srcIP4 = ipv4.SrcIP.String()
+				} else if ipv6, ok := ipLayer.(*layers.IPv6); ok {
+					srcIP6 = ipv6.SrcIP.String()
+				}
+
+				// 确定传输层类型
+				tcpLayer := packet.Layer(layers.LayerTypeTCP)
+				if tcpLayer != nil {
+					tcp, ok = tcpLayer.(*layers.TCP)
+					if !ok {
+						continue
+					}
+				}
+				udpLayer := packet.Layer(layers.LayerTypeUDP)
+				if udpLayer != nil {
+					udp, ok = udpLayer.(*layers.UDP)
+					if !ok {
+						continue
+					}
+				}
+
+				// 只有传输层协议为 TCP或 UDP 时才会继续处理
+				if layerType.LayerType() == layers.LayerTypeTCP || layerType.LayerType() == layers.LayerTypeUDP {
+					srcPort := fmt.Sprint(int(tcp.SrcPort))
+					srcIP4WithPort := net.JoinHostPort(srcIP4, srcPort)
+					isIP4InRange := s.IPRanger.ContainsAny(srcIP4, srcIP4WithPort)
+					srcIP6WithPort := net.JoinHostPort(srcIP6, srcPort)
+					isIP6InRange := s.IPRanger.ContainsAny(srcIP6, srcIP6WithPort)
+					var ip string
+					if isIP4InRange {
+						ip = srcIP4
+					} else if isIP6InRange {
+						ip = srcIP6
+					} else {
+						logger.Info(fmt.Sprintf("Discarding Transport packet from non target ips: ip4=%s ip6=%s\n", srcIP4, srcIP6))
+					}
+					transportReaderCallback(*tcp, *udp, ip, srcIP4, srcIP6)
+				}
+			}
+		}
+	}
+
+	for _, handler := range handlers.LoopbackHandlers {
+		wgread.Add(1)
+		go loopBackScanCaseCallback(handler, &wgread)
+	}
 
 	// 传输层读取器 （TCP|UDP），并发处理网络数据包
 	for _, handler := range handlers.TransportActive {
@@ -352,7 +370,7 @@ func TransportReadWorkerPCAPUnix(s *Scanner) {
 						continue
 					}
 					for _, layerType := range decoded {
-						// 检查已解码的协议层是否为 TCP或 UDP 协议
+						// 检查已解码的协议层是否为 TCP 或 UDP 协议
 						if layerType == layers.LayerTypeTCP || layerType == layers.LayerTypeUDP {
 							// 提取源端口和源 IP，构建带端口的IP 地址，查看 IP 地址是否在目标 IP 范围内
 							srcPort := fmt.Sprint(int(tcp.SrcPort))
@@ -428,7 +446,7 @@ func TransportReadWorkerPCAPUnix(s *Scanner) {
 							}
 							// 检查 ARP 数据包的操作码，判断是否为 ARP 回复
 							srcIP4 := net.IP(arp.SourceProtAddress)
-							srcMac := net.HardwareAddr(arp.SourceHwAddress)
+							//srcMac := net.HardwareAddr(arp.SourceHwAddress)
 
 							isIP4InRange := s.IPRanger.Contains(srcIP4.String())
 
@@ -437,11 +455,11 @@ func TransportReadWorkerPCAPUnix(s *Scanner) {
 							if isIP4InRange {
 								ip = srcIP4.String()
 							} else {
-								logger.Info(fmt.Sprintf("Discarding ARP packet from non target ip: ip4=%s mac=%s\n", srcIP4, srcMac))
+								//logger.Info(fmt.Sprintf("Discarding ARP packet from non target ip: ip4=%s mac=%s\n", srcIP4, srcMac))
 								continue
 							}
 
-							s.hostDiscoveryChan <- &PkgResult{ip: ip}
+							s.hostDiscoveryChan.Send(&PkgResult{ip: ip})
 						}
 					}
 				}

@@ -21,7 +21,7 @@ type executorIns struct {
 
 // ValidWorkCreateParams 验证任务参数
 func (ei *executorIns) ValidWorkCreateParams(params map[string]interface{}) (err error) {
-	var schema = new(schemas.PortScanParams)
+	var schema = new(schemas.HostDiscoverParams)
 	err = toolSchemas.CustomBindSchema(params, schema, schemas.RegisterValidatorRule)
 	return err
 }
@@ -35,15 +35,29 @@ func (ei *executorIns) ExecutorMainFunc(ctx context.Context, params map[string]i
 	go func() {
 		defer close(errChan)
 		work := params["work"].(*toolModels.Work)
-		var validParams schemas.PortScanParams
-		err := json.Unmarshal(work.Params, &validParams)
-		if err != nil {
-			logger.Error(toolSchemas.JsonParseErr, err)
-			errChan <- err
-		} else {
-			err = infodetect.InfoDetectMainWorker(ctx, work, &validParams)
-			errChan <- err
+		switch work.WorkType {
+		case "portscan":
+			var validParams schemas.PortScanParams
+			err := json.Unmarshal(work.Params, &validParams)
+			if err != nil {
+				logger.Error(toolSchemas.JsonParseErr, err)
+				errChan <- err
+			} else {
+				err = infodetect.InfoDetectMainWorker(ctx, work, &validParams)
+				errChan <- err
+			}
+		case "hostdiscover":
+			var validParams schemas.HostDiscoverParams
+			err := json.Unmarshal(work.Params, &validParams)
+			if err != nil {
+				logger.Error(toolSchemas.JsonParseErr, err)
+				errChan <- err
+			} else {
+				err = infodetect.HostDiscoverMainWorker(ctx, work, &validParams)
+				errChan <- err
+			}
 		}
+
 	}()
 	select {
 	case <-ctx.Done():

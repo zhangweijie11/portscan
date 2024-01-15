@@ -3,6 +3,7 @@ package infodetect
 import (
 	"context"
 	"errors"
+	"fmt"
 	"gitlab.example.com/zhangweijie/portscan/global"
 	"gitlab.example.com/zhangweijie/portscan/middlerware/schemas"
 	"gitlab.example.com/zhangweijie/portscan/services/common"
@@ -32,15 +33,12 @@ type Worker struct {
 }
 
 type Task struct {
-	WorkUUID    string           // 总任务 UUID
-	TaskUUID    string           // 子任务 UUID
-	TargetIps   []string         // 子任务目标 IP
-	TargetPorts []*portlist.Port // 子任务目标端口
-	CDN         bool             // 子任务参数
-	WAF         bool             // 子任务参数
-	Cloud       bool             // 子任务参数
-	Nmap        *nmap.Nmap       // 执行 Nmap
-	ScanType    string           // 扫描模式
+	WorkUUID    string                  // 总任务 UUID
+	TaskUUID    string                  // 子任务 UUID
+	TargetIps   []string                // 子任务目标 IP
+	TargetPorts []*portlist.Port        // 子任务目标端口
+	ValidParams *schemas.PortScanParams // 任务全部参数
+	Nmap        *nmap.Nmap              // 执行 Nmap
 }
 
 // NewWorker 初始化 worker
@@ -87,7 +85,7 @@ func (w *Worker) GroupPortScanWorker() {
 				return
 			default:
 				// 获取开放端口和对应协议
-				portScanResult := pportscan.GetOpenPort(w.Ctx, task.TargetIps, task.TargetPorts, task.CDN, task.WAF, task.Cloud, task.ScanType)
+				portScanResult := pportscan.GetOpenPort(w.Ctx, task.TargetIps, task.TargetPorts, task.ValidParams)
 
 				// 进行服务识别
 				serviceRecognizeScanResult := service_recognize.GetService(w.Ctx, portScanResult.IpPorts, task.Nmap)
@@ -111,7 +109,7 @@ func InfoDetectMainWorker(ctx context.Context, work *toolModels.Work, validParam
 		defer close(quit)
 		defer close(errChan)
 
-		scanType := banner.ShowNetworkCapabilities(validParams.ScanType)
+		scanType := banner.ShowNetworkCapabilities(validParams)
 		validParams.ScanType = scanType
 		validIps, err := utils.SplitAndParseIP(validParams.IP)
 		if err != nil {
@@ -169,10 +167,7 @@ func InfoDetectMainWorker(ctx context.Context, work *toolModels.Work, validParam
 						TaskUUID:    strconv.Itoa(count),
 						TargetIps:   validIps[ipStart:ipEnd],
 						TargetPorts: validPorts[portStart:portEnd],
-						CDN:         validParams.CDN,
-						WAF:         validParams.WAF,
-						Cloud:       validParams.Cloud,
-						ScanType:    validParams.ScanType,
+						ValidParams: validParams,
 						Nmap:        customNmap,
 					}
 					taskChan <- task
@@ -241,6 +236,64 @@ func InfoDetectMainWorker(ctx context.Context, work *toolModels.Work, validParam
 
 		if work.CallbackType != "" && work.CallbackUrl != "" {
 			pushResult := &toolGlobal.Result{WorkUUID: work.UUID, CallbackType: work.CallbackType, CallbackUrl: work.CallbackUrl, Result: map[string]interface{}{"result": finalResult}}
+			// 回传结果
+			toolGlobal.ValidResultChan <- pushResult
+		}
+	}()
+
+	select {
+	case <-ctx.Done():
+		return errors.New(toolSchemas.WorkCancelErr)
+	case <-quit:
+		return nil
+	case err := <-errChan:
+		return err
+	}
+}
+
+// HostDiscoverMainWorker  主机发现主程序
+func HostDiscoverMainWorker(ctx context.Context, work *toolModels.Work, validParams *schemas.HostDiscoverParams) error {
+	quit := make(chan struct{})
+	errChan := make(chan error, 2)
+
+	go func() {
+		defer close(quit)
+		defer close(errChan)
+
+		scanType := banner.ShowNetworkCapabilities(validParams)
+		validParams.ScanType = scanType
+		validIps, err := utils.SplitAndParseIP(validParams.IP)
+		if err != nil {
+			errChan <- err
+		}
+		source := rand.NewSource(time.Now().UnixNano())
+		rng := rand.New(source)
+
+		// 随机打乱 IP 和端口
+		rng.Shuffle(len(validIps), func(i, j int) {
+			validIps[i], validIps[j] = validIps[j], validIps[i]
+		})
+
+		if !(validParams.HostDiscover.ArpPing || validParams.HostDiscover.IPv6NeighborDiscoveryPing || validParams.HostDiscover.IcmpAddressMaskRequestProbe ||
+			validParams.HostDiscover.IcmpEchoRequestProbe || validParams.HostDiscover.IcmpTimestampRequestProbe || len(validParams.HostDiscover.TcpAckPingProbes) > 0 ||
+			len(validParams.HostDiscover.TcpAckPingProbes) > 0) {
+			validParams.HostDiscover.IcmpEchoRequestProbe = true
+			validParams.HostDiscover.IcmpTimestampRequestProbe = true
+			validParams.HostDiscover.TcpSynPingProbes = append(validParams.HostDiscover.TcpSynPingProbes, "80")
+			validParams.HostDiscover.TcpSynPingProbes = append(validParams.HostDiscover.TcpSynPingProbes, "443")
+			validParams.HostDiscover.TcpAckPingProbes = append(validParams.HostDiscover.TcpAckPingProbes, "80")
+			validParams.HostDiscover.TcpAckPingProbes = append(validParams.HostDiscover.TcpAckPingProbes, "443")
+		}
+
+		hostDiscoverResult := pportscan.GetHostDiscover(ctx, validIps, validParams)
+		for _, ip := range validIps {
+			if hostDiscoverResult.PortScanIpStatus[ip] == "active" {
+				fmt.Println("------------>", ip)
+			}
+		}
+
+		if work.CallbackType != "" && work.CallbackUrl != "" {
+			pushResult := &toolGlobal.Result{WorkUUID: work.UUID, CallbackType: work.CallbackType, CallbackUrl: work.CallbackUrl, Result: map[string]interface{}{"result": hostDiscoverResult.PortScanIpStatus}}
 			// 回传结果
 			toolGlobal.ValidResultChan <- pushResult
 		}

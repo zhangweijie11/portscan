@@ -17,6 +17,7 @@ import (
 	"github.com/projectdiscovery/utils/routing"
 	"github.com/remeh/sizedwaitgroup"
 	"gitlab.example.com/zhangweijie/portscan/global"
+	"gitlab.example.com/zhangweijie/portscan/middlerware/schemas"
 	"gitlab.example.com/zhangweijie/portscan/services/pportscan/portlist"
 	"gitlab.example.com/zhangweijie/portscan/services/pportscan/privileges"
 	"gitlab.example.com/zhangweijie/portscan/services/pportscan/protocol"
@@ -30,6 +31,7 @@ import (
 	"net"
 	"os"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -55,6 +57,31 @@ const (
 	Ndp
 )
 
+type PkgResultChan struct {
+	sync.RWMutex
+	PkgResult chan *PkgResult
+	closed    bool
+}
+
+func (prc *PkgResultChan) Send(pkgResult *PkgResult) {
+	prc.RLock()
+	defer prc.RUnlock()
+
+	if !prc.closed {
+		prc.PkgResult <- pkgResult
+	}
+}
+
+func (prc *PkgResultChan) Close() {
+	prc.Lock()
+	defer prc.Unlock()
+
+	if !prc.closed {
+		close(prc.PkgResult)
+		prc.closed = true
+	}
+}
+
 type Scanner struct {
 	excludeCDN           bool   // 是否排除 CDN IP，默认为排除
 	excludeWAF           bool   // 是否排除 WAF IP，默认为不排除
@@ -75,9 +102,9 @@ type Scanner struct {
 	transportPacketSend  chan *PkgSend
 	icmpPacketSend       chan *PkgSend
 	ethernetPacketSend   chan *PkgSend
-	tcpChan              chan *PkgResult
-	udpChan              chan *PkgResult
-	hostDiscoveryChan    chan *PkgResult
+	tcpChan              PkgResultChan
+	udpChan              PkgResultChan
+	hostDiscoveryChan    PkgResultChan
 	Ports                []*portlist.Port
 	IPRanger             *ipranger.IPRanger
 	cdn                  *cdncheck.Client // 判断是否是 CDN 的客户端
@@ -89,6 +116,7 @@ type Scanner struct {
 	Limiter              *ratelimit.Limiter            // 控制单位时间内的发包数量
 	WgScan               sizedwaitgroup.SizedWaitGroup // 控制协程并发数量
 	serializeOptions     gopacket.SerializeOptions
+	hostDiscover         *schemas.HostDiscover
 }
 
 // PkgSend 发送的 TCP 包
@@ -120,7 +148,7 @@ var (
 )
 
 // NewScanner 初始化扫描器
-func NewScanner(ctx context.Context, cdn, waf, cloud bool, scanType string) *Scanner {
+func NewScanner(ctx context.Context, cdn, waf, cloud bool, scanType string, hostDiscover *schemas.HostDiscover) *Scanner {
 	// 可通过集成 hmap 键值存储来追踪目标 IP，另外还继承了 mapcidr 库
 	iprang, err := ipranger.New()
 	if err != nil {
@@ -141,6 +169,7 @@ func NewScanner(ctx context.Context, cdn, waf, cloud bool, scanType string) *Sca
 		tcpsequencer:     NewTCPSequencer(),
 		IPRanger:         iprang,
 		serializeOptions: gopacket.SerializeOptions{FixLengths: true, ComputeChecksums: true},
+		hostDiscover:     hostDiscover,
 	}
 
 	// 不同的扫描模式，参数控制也不同
@@ -163,6 +192,7 @@ func NewScanner(ctx context.Context, cdn, waf, cloud bool, scanType string) *Sca
 		scanner.cdn = cdncheck.New()
 	}
 	scanner.ScanResults = result.NewPortScanResult()
+	scanner.HostDiscoveryResults = result.NewPortScanResult()
 
 	// 如果是 root 权限用户，提供回调函数
 	if privileges.IsPrivileged && scanType == global.SynScan && newScannerCallback != nil {
@@ -184,7 +214,7 @@ func (s *Scanner) CleanupHandlers() {
 // Close 关闭扫描程序实例
 func (s *Scanner) Close() {
 	_ = s.IPRanger.Hosts.Close()
-	s.CleanupHandlers()
+	//s.CleanupHandlers()
 	if s.tcpPacketListener4 != nil {
 		s.tcpPacketListener4.Close()
 	}
@@ -212,40 +242,69 @@ func (s *Scanner) Close() {
 	if s.ethernetPacketSend != nil {
 		close(s.ethernetPacketSend)
 	}
-	if s.tcpChan != nil {
-		close(s.tcpChan)
-	}
-	if s.udpChan != nil {
-		close(s.udpChan)
-	}
-	if s.hostDiscoveryChan != nil {
-		close(s.hostDiscoveryChan)
-	}
+	s.tcpChan.Close()
+	s.udpChan.Close()
+	s.hostDiscoveryChan.Close()
 }
 
 // StartWorkers 后台执行任务
-func (s *Scanner) StartWorkers() {
-	//go s.ICMPReadWorker()
-	//go s.ICMPWriteWorker()
-	//go s.ICMPResultWorker()
-	//go s.EthernetWriteWorker()
+func (s *Scanner) StartWorkers(taskType string) {
+	switch {
+	case taskType == "portScan":
+		// 构建和发送数据包
+		go s.TransportWriteWorker()
 
-	// 构建和发送数据包
-	go s.TransportWriteWorker()
+		// 读取数据包的内容
+		go s.TCPReadWorker4()
+		go s.TCPReadWorker6()
+		go s.UDPReadWorker4()
+		go s.UDPReadWorker6()
 
-	// 读取数据包的内容
-	go s.TCPReadWorker4()
-	go s.TCPReadWorker6()
-	go s.UDPReadWorker4()
-	go s.UDPReadWorker6()
+		// 接收和解析数据包
+		go s.TCPReadWorkerPCAP()
 
-	// 接收和解析数据包
-	go s.TCPReadWorkerPCAP()
+		// 处理结果
+		go s.TCPResultWorker()
+		go s.UDPResultWorker()
+	case taskType == "hostDiscover":
+		go s.EthernetWriteWorker()
+		go s.ICMPWriteWorker()
+		go s.EthernetWriteWorker()
+		go s.ICMPReadWorker()
+		go s.ICMPResultWorker()
 
-	// 处理结果
-	go s.TCPResultWorker()
-	go s.UDPResultWorker()
+		// 构建和发送数据包
+		go s.TransportWriteWorker()
 
+		// 读取数据包的内容
+		go s.TCPReadWorker4()
+		go s.TCPReadWorker6()
+		go s.UDPReadWorker4()
+		go s.UDPReadWorker6()
+
+		// 接收和解析数据包
+		go s.TCPReadWorkerPCAP()
+
+		// 处理结果
+		go s.TCPResultWorker()
+		go s.UDPResultWorker()
+	default:
+		// 构建和发送数据包
+		go s.TransportWriteWorker()
+
+		// 读取数据包的内容
+		go s.TCPReadWorker4()
+		go s.TCPReadWorker6()
+		go s.UDPReadWorker4()
+		go s.UDPReadWorker6()
+
+		// 接收和解析数据包
+		go s.TCPReadWorkerPCAP()
+
+		// 处理结果
+		go s.TCPResultWorker()
+		go s.UDPResultWorker()
+	}
 }
 
 // ICMPReadWorker 启动 IP4 和 IP6 工作程序
@@ -279,7 +338,7 @@ func (s *Scanner) ICMPReadWorker4() {
 
 		switch rm.Type {
 		case ipv4.ICMPTypeEchoReply, ipv4.ICMPTypeTimestampReply:
-			s.hostDiscoveryChan <- &PkgResult{ip: addr.String()}
+			s.hostDiscoveryChan.Send(&PkgResult{ip: addr.String()})
 		}
 	}
 }
@@ -318,7 +377,7 @@ func (s *Scanner) ICMPReadWorker6() {
 			if idx := strings.Index(ip, "%"); idx > 0 {
 				ip = ip[:idx]
 			}
-			s.hostDiscoveryChan <- &PkgResult{ip: ip}
+			s.hostDiscoveryChan.Send(&PkgResult{ip: ip})
 		}
 	}
 }
@@ -341,7 +400,7 @@ func (s *Scanner) ICMPWriteWorker() {
 
 // ICMPResultWorker 处理 ICMP 响应（仅在探测期间使用）
 func (s *Scanner) ICMPResultWorker() {
-	for ip := range s.hostDiscoveryChan {
+	for ip := range s.hostDiscoveryChan.PkgResult {
 		if s.Phase.Is(HostDiscovery) {
 			//logger.Info(fmt.Sprintf("Received ICMP response from %s\n", ip.ip))
 			s.HostDiscoveryResults.AddIp(ip.ip)
@@ -640,7 +699,7 @@ func (s *Scanner) sendAsyncUDP6(ip string, p *portlist.Port) {
 
 // TCPResultWorker 处理 TCP 扫描结果
 func (s *Scanner) TCPResultWorker() {
-	for ip := range s.tcpChan {
+	for ip := range s.tcpChan.PkgResult {
 		if s.Phase.Is(HostDiscovery) {
 			//logger.Info(fmt.Sprintf("Received Transport (TCP|UDP) probe response from %s:%d\n", ip.ip, ip.port.Port))
 			s.HostDiscoveryResults.AddIp(ip.ip)
@@ -653,7 +712,7 @@ func (s *Scanner) TCPResultWorker() {
 
 // UDPResultWorker 处理 UDP 扫描结果
 func (s *Scanner) UDPResultWorker() {
-	for ip := range s.udpChan {
+	for ip := range s.udpChan.PkgResult {
 		if s.Phase.Is(HostDiscovery) {
 			//logger.Info(fmt.Sprintf("Received UDP probe response from %s:%d\n", ip.ip, ip.port.Port))
 			s.HostDiscoveryResults.AddIp(ip.ip)
@@ -716,19 +775,18 @@ func (s *Scanner) SetupHandler(interfaceName string) error {
 			return err
 		}
 	}
-	// TODO：ARP 主要用来进行主机发现
 	//arp filter should be improved with source mac
 	// https://stackoverflow.com/questions/40196549/bpf-expression-to-capture-only-arp-reply-packets
 	// (arp[6:2] = 2) and dst host host and ether dst mac
 	// 设置 arp 过滤器
-	//bpfFilter = "arp"
-	//// 执行回调函数
-	//if setupHandlerCallback != nil {
-	//	err := setupHandlerCallback(s, interfaceName, bpfFilter, protocol.ARP)
-	//	if err != nil {
-	//		return err
-	//	}
-	//}
+	bpfFilter = "arp"
+	// 执行回调函数
+	if setupHandlerCallback != nil {
+		err := setupHandlerCallback(s, interfaceName, bpfFilter, protocol.ARP)
+		if err != nil {
+			return err
+		}
+	}
 
 	return nil
 }
@@ -750,9 +808,10 @@ func (s *Scanner) SetupHandlers() error {
 		if isInterfaceDown {
 			continue
 		}
-		if err = s.SetupHandler(itf.Name); err != nil {
-			logger.Warn(fmt.Sprintf("Error on interface %s: %s", itf.Name, err))
-		}
+		s.SetupHandler(itf.Name)
+		//if err = s.SetupHandler(itf.Name); err != nil {
+		//	logger.Warn(fmt.Sprintf("Error on interface %s: %s", itf.Name, err))
+		//}
 	}
 
 	return nil
@@ -973,15 +1032,15 @@ func (s *Scanner) GetPreprocessedIps() (ips []*net.IPNet, ipStatus map[string]st
 	return
 }
 
-func (s *Scanner) GetTargetIps(ipsCallback func() ([]*net.IPNet, map[string]string)) (ipStatus map[string]string, targets, targetsV4, targetsv6 []*net.IPNet, err error) {
+func (s *Scanner) GetTargetIps(ipsCallback func() ([]*net.IPNet, map[string]string)) (ipStatus map[string]string, targets, targetsV4, targetsV6 []*net.IPNet, err error) {
 	targets, ipStatus = ipsCallback()
 
 	// 将 IP 缩小到最少的 CIDR 量
-	targetsV4, targetsv6 = mapcidr.CoalesceCIDRs(targets)
-	if len(targetsV4) == 0 && len(targetsv6) == 0 {
+	targetsV4, targetsV6 = mapcidr.CoalesceCIDRs(targets)
+	if len(targetsV4) == 0 && len(targetsV6) == 0 {
 		return nil, nil, nil, nil, errors.New("no valid ipv4 or ipv6 targets were found")
 	}
-	return ipStatus, targets, targetsV4, targetsv6, nil
+	return ipStatus, targets, targetsV4, targetsV6, nil
 }
 
 // SplitAndParseIP  切割解析 IP
@@ -1120,5 +1179,48 @@ func (s *Scanner) RawSocketEnumeration(ip string, p *portlist.Port) {
 		s.EnqueueTCP(ip, Syn, p)
 	case protocol.UDP:
 		s.EnqueueUDP(ip, p)
+	}
+}
+
+func (s *Scanner) HandleHostDiscovery(host string) {
+	s.Limiter.Take()
+	// Pings
+	// - Icmp Echo Request
+	if s.hostDiscover.IcmpEchoRequestProbe {
+		s.EnqueueICMP(host, IcmpEchoRequest)
+	}
+	// - Icmp Timestamp Request
+	if s.hostDiscover.IcmpTimestampRequestProbe {
+		s.EnqueueICMP(host, IcmpTimestampRequest)
+	}
+	// - Icmp Netmask Request
+	if s.hostDiscover.IcmpAddressMaskRequestProbe {
+		s.EnqueueICMP(host, IcmpAddressMaskRequest)
+	}
+	// ARP scan
+	if s.hostDiscover.ArpPing {
+		s.EnqueueEthernet(host, Arp)
+	}
+	// Syn Probes（默认端口 80）
+	if len(s.hostDiscover.TcpSynPingProbes) > 0 {
+		ports, _ := portlist.ParsePortsSlice(s.hostDiscover.TcpSynPingProbes)
+		s.EnqueueTCP(host, Syn, ports...)
+	}
+	// Ack Probes（默认端口 443）
+	if len(s.hostDiscover.TcpAckPingProbes) > 0 {
+		ports, _ := portlist.ParsePortsSlice(s.hostDiscover.TcpAckPingProbes)
+		s.EnqueueTCP(host, Ack, ports...)
+	}
+	// IPv6-ND (for now we broadcast ICMPv6 to ff02::1)
+	if s.hostDiscover.IPv6NeighborDiscoveryPing {
+		s.EnqueueICMP("ff02::1", Ndp)
+	}
+}
+
+func (s *Scanner) GetHandlers() {
+	if handlers, ok := s.handlers.(Handlers); ok {
+		for _, handler := range handlers.EthernetActive {
+			fmt.Println("------------>handler", handler)
+		}
 	}
 }

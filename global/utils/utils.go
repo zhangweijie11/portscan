@@ -18,7 +18,7 @@ func GetAreaOfIP(ip string) (map[string]string, error) {
 	// 备注：并发使用，每个 goroutine 需要创建一个独立的 searcher 对象。
 	searcher, err := xdb.NewWithFileOnly(dbPath)
 	if err != nil {
-		logger.Error("创建 IP 地址搜索器失败: %s\n", err)
+		logger.Error("创建 IP 地址搜索器失败: %s", err)
 		return result, err
 	}
 
@@ -26,7 +26,7 @@ func GetAreaOfIP(ip string) (map[string]string, error) {
 	// do the search
 	searchRegion, err := searcher.SearchByStr(ip)
 	if err != nil {
-		fmt.Printf("failed to SearchIP(%s): %s\n", ip, err)
+		fmt.Printf("failed to SearchIP(%s): %s", ip, err)
 		return result, err
 	}
 	splitSearchRegion := strings.Split(searchRegion, "|")

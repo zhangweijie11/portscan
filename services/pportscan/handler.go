@@ -5,11 +5,13 @@ import (
 	"github.com/projectdiscovery/blackrock"
 	"github.com/projectdiscovery/mapcidr"
 	"gitlab.example.com/zhangweijie/portscan/global"
+	"gitlab.example.com/zhangweijie/portscan/middlerware/schemas"
 	"gitlab.example.com/zhangweijie/portscan/services/pportscan/portlist"
 	"gitlab.example.com/zhangweijie/portscan/services/pportscan/privileges"
 	"gitlab.example.com/zhangweijie/portscan/services/pportscan/result"
 	sc "gitlab.example.com/zhangweijie/portscan/services/pportscan/scanner"
 	"gitlab.example.com/zhangweijie/tool-sdk/middleware/logger"
+	"net"
 	"time"
 )
 
@@ -26,19 +28,19 @@ func NewFinalResult() FinalResult {
 }
 
 // GetOpenPort 获取开放端口
-func GetOpenPort(ctx context.Context, validIps []string, validPorts []*portlist.Port, cdn, waf, cloud bool, scanType string) FinalResult {
+func GetOpenPort(ctx context.Context, validIps []string, validPorts []*portlist.Port, validParams *schemas.PortScanParams) FinalResult {
 	finalResult := NewFinalResult()
-	scanner := sc.NewScanner(ctx, cdn, waf, cloud, scanType)
+	scanner := sc.NewScanner(ctx, validParams.CDN, validParams.WAF, validParams.Cloud, validParams.ScanType, &validParams.HostDiscover)
 	defer scanner.Close()
 
 	// 如果是半连接扫描，需要设置处理器
-	if privileges.IsPrivileged && scanType == global.SynScan {
+	if privileges.IsPrivileged && validParams.ScanType == global.SynScan {
 		err := scanner.SetupHandlers()
 		if err != nil {
 			logger.Warn("设置PCAP处理器出现问题")
 			return finalResult
 		}
-		scanner.StartWorkers()
+		scanner.StartWorkers("portScan")
 	}
 
 	scanner.Ports = validPorts
@@ -126,6 +128,65 @@ func GetOpenPort(ctx context.Context, validIps []string, validPorts []*portlist.
 	}
 
 	finalResult.PortScanIpStatus = ipStatus
+
+	return finalResult
+}
+
+// GetHostDiscover 获取可用主机
+func GetHostDiscover(ctx context.Context, validIps []string, validParams *schemas.HostDiscoverParams) FinalResult {
+	finalResult := NewFinalResult()
+	for _, validIp := range validIps {
+		// 默认全部 IP 不存活
+		finalResult.PortScanIpStatus[validIp] = "inactive"
+	}
+	scanner := sc.NewScanner(ctx, validParams.CDN, validParams.WAF, validParams.Cloud, validParams.ScanType, &validParams.HostDiscover)
+
+	defer scanner.Close()
+
+	// 如果是半连接扫描，需要设置处理器
+	if privileges.IsPrivileged && validParams.ScanType == global.SynScan {
+		err := scanner.SetupHandlers()
+		if err != nil {
+			logger.Warn("设置PCAP处理器出现问题")
+			return finalResult
+		}
+		scanner.StartWorkers("hostDiscover")
+	}
+
+	scanner.Phase.Set(sc.Init)
+	err := scanner.SplitAndParseIP(validIps)
+	if err != nil {
+		logger.Warn("创建 IPRanger 出现问题")
+	}
+
+	if privileges.IsOSSupported && privileges.IsPrivileged && validParams.ScanType == global.SynScan && validParams.HostDiscover.OnlyHostDiscover == true {
+		scanner.Phase.Set(sc.HostDiscovery)
+		ipsCallback := scanner.GetPreprocessedIps
+		// 将 IP 缩小到最少的 CIDR 量
+		_, _, targetsV4, targetsV6, _ := scanner.GetTargetIps(ipsCallback)
+		discoverCidr := func(cidr *net.IPNet) {
+			ipStream, _ := mapcidr.IPAddressesAsStream(cidr.String())
+			for ip := range ipStream {
+				scanner.HandleHostDiscovery(ip)
+			}
+		}
+
+		for _, target4 := range targetsV4 {
+			discoverCidr(target4)
+		}
+		for _, target6 := range targetsV6 {
+			discoverCidr(target6)
+		}
+
+		time.Sleep(time.Second * 5)
+
+		for ip := range scanner.HostDiscoveryResults.GetIPs() {
+			// 修改存活 IP 状态
+			finalResult.PortScanIpStatus[ip] = "active"
+		}
+
+		return finalResult
+	}
 
 	return finalResult
 }

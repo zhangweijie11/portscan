@@ -16,7 +16,7 @@ func init() {
 	pingNdpRequestAsyncCallback = PingNdpRequestAsync
 }
 
-// PingNdpRequestAsync 与目标 IP 地址异步
+// PingNdpRequestAsync 异步发送 ICMP 的Echo Request 回声请求到指定的 IPv6 地址
 func PingNdpRequestAsync(s *Scanner, ip string) {
 	networkInterface, _, _, err := s.Router.Route(net.ParseIP(ip))
 	if networkInterface == nil {
