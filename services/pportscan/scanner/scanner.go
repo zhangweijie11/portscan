@@ -77,7 +77,9 @@ func (prc *PkgResultChan) Close() {
 	defer prc.Unlock()
 
 	if !prc.closed {
-		close(prc.PkgResult)
+		if prc.PkgResult != nil {
+			close(prc.PkgResult)
+		}
 		prc.closed = true
 	}
 }
