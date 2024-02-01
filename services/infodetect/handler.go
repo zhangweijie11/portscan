@@ -109,7 +109,7 @@ func InfoDetectMainWorker(ctx context.Context, work *toolModels.Work, validParam
 		defer close(quit)
 		defer close(errChan)
 
-		scanType := banner.ShowNetworkCapabilities(validParams)
+		scanType := banner.ShowNetworkCapabilities(validParams.ScanType)
 		validParams.ScanType = scanType
 		validIps, err := utils.SplitAndParseIP(validParams.IP)
 		if err != nil {
@@ -260,7 +260,7 @@ func HostDiscoverMainWorker(ctx context.Context, work *toolModels.Work, validPar
 		defer close(quit)
 		defer close(errChan)
 
-		scanType := banner.ShowNetworkCapabilities(validParams)
+		scanType := banner.ShowNetworkCapabilities(validParams.ScanType)
 		validParams.ScanType = scanType
 		validIps, err := utils.SplitAndParseIP(validParams.IP)
 		if err != nil {
