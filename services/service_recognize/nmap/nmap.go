@@ -44,7 +44,7 @@ func NewNmap() (nmap *Nmap) {
 		sslProbeMap:        []string{"TCP_TLSSessionReq", "TCP_SSLSessionReq", "TCP_SSLv23SessionReq"},
 
 		filter:  9,
-		timeout: time.Second * 2,
+		timeout: time.Second * 3,
 	}
 
 	// 预加载端口和探针的映射
@@ -53,6 +53,13 @@ func NewNmap() (nmap *Nmap) {
 	}
 	//加载探针相关信息
 	nmap.loadProbes(nmapServiceProbes + nmapCustomizeProbes)
+
+	// 新增探针，修复无法识别 HTTP 服务的问题
+	pro := *nmap.probeNameMap["TCP_GetRequest"]
+	pro.name = "TCP_GetRequest1.1"
+	pro.sendRaw = "GET /test HTTP/1.1\r\n\r\n"
+	nmap.probeNameMap["TCP_GetRequest1.1"] = &pro
+
 	//修复fallback
 	nmap.fixFallback()
 	//自定义匹配规则
@@ -193,6 +200,10 @@ func (n *Nmap) customNmapMatch() {
 	n.addMatch("TCP_GetRequest", `mongodb m|.*It looks like you are trying to access MongoDB.*|s p/MongoDB/`)
 	n.addMatch("TCP_GetRequest", `http m|^HTTP/1\.[01] \d\d\d (?:[^\r\n]+\r\n)*?Server: ([^\r\n]+)| p/$1/`)
 	n.addMatch("TCP_GetRequest", `http m|^HTTP/1\.[01] \d\d\d|`)
+	n.addMatch("TCP_GetRequest1.1", `echo m|^GET / HTTP/1.0\r\n\r\n$|s`)
+	n.addMatch("TCP_GetRequest1.1", `mongodb m|.*It looks like you are trying to access MongoDB.*|s p/MongoDB/`)
+	n.addMatch("TCP_GetRequest1.1", `http m|^HTTP/1\.[01] \d\d\d (?:[^\r\n]+\r\n)*?Server: ([^\r\n]+)| p/$1/`)
+	n.addMatch("TCP_GetRequest1.1", `http m|^HTTP/1\.[01] \d\d\d|`)
 	n.addMatch("TCP_NULL", `mysql m|.\x00\x00..j\x04Host '.*' is not allowed to connect to this MariaDB server| p/MariaDB/`)
 	n.addMatch("TCP_NULL", `mysql m|.\x00\x00..j\x04Host '.*' is not allowed to connect to this MySQL server| p/MySQL/`)
 	n.addMatch("TCP_NULL", `mysql m|.\x00\x00\x00\x0a(\d+\.\d+\.\d+)\x00.*caching_sha2_password\x00| p/MariaDB/ v/$1/`)
@@ -245,6 +256,7 @@ func (n *Nmap) optimizeNmapProbes() {
 	//将TCP_GetRequest的fallback参数设置为NULL探针，避免漏资产
 	n.probeNameMap["TCP_GenericLines"].fallback = "TCP_NULL"
 	n.probeNameMap["TCP_GetRequest"].fallback = "TCP_NULL"
+	n.probeNameMap["TCP_GetRequest1.1"].fallback = "TCP_NULL"
 	n.probeNameMap["TCP_TerminalServerCookie"].fallback = "TCP_GetRequest"
 	n.probeNameMap["TCP_TerminalServer"].fallback = "TCP_GetRequest"
 }
